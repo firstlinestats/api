@@ -5,3 +5,4 @@ api_urls.py
 ./.vagrant
 ./Vagrantfile
 ./bundle
+scripts/*
