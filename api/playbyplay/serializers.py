@@ -1,5 +1,5 @@
 from rest_framework import serializers
-
+from team.serializers import TeamSerializer
 import constants
 import models
 
@@ -10,12 +10,8 @@ class RecentGameSerializer(serializers.ModelSerializer):
     gameType = serializers.SerializerMethodField('GetGameType')
     corsi = serializers.SerializerMethodField('GetCorsi')
     score = serializers.SerializerMethodField('GetScore')
-    homeTeam = serializers.SlugRelatedField(
-            many=False, read_only=True, slug_field="shortName"
-        )
-    awayTeam = serializers.SlugRelatedField(
-            many=False, read_only=True, slug_field="shortName"
-        )
+    homeTeam = TeamSerializer()
+    awayTeam = TeamSerializer()
 
     class Meta:
         model = models.Game
