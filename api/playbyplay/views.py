@@ -84,9 +84,9 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 if home_or_away == 1:
                     home_or_away = False
                 elif home_or_away == 2:
-                    home_or_away = True
-                else:
                     home_or_away = None
+                else:
+                    home_or_away = True
             except:
                 pass
         positions = None
