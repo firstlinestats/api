@@ -1,6 +1,8 @@
+from django.db.models import Q
 from django.shortcuts import render
 
 from rest_framework import viewsets
+from rest_framework import filters
 from rest_framework.response import Response
 from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
@@ -24,7 +26,11 @@ class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):
 class PlayerGameStatsViewSet(viewsets.ViewSet):
     def list(self, request):
         currentSeason = models.Game.objects.latest("endDateTime").season
-        getValues = {}
+        getValues = dict(request.GET)
+        for key in getValues:
+            val = getValues[key]
+            if len(val) == 0:
+                getValues.pop(key, None)
         args = ()
         kwargs = {
             'game__gameState__in': [6, 7, 8],
@@ -113,7 +119,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             "player__currentTeam__abbreviation", "player__id",
             "player__currentTeam__shortName", "player__height",
             "player__weight", "game__season", "game__homeTeam"]
-        exclude = set(exclude)
+
         for t in tgameStats:
             counts = True
             if home_or_away is not None:
@@ -129,9 +135,11 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                     gameStats = seasonStats[t["game__season"]]
                 if t[pid] not in gameStats:
                     gameStats[t[pid]] = t
-                    gameStats[t[pid]]["games"] = 0
+                    gameStats[t[pid]]["games"] = 1
                     gameStats[t[pid]]["age"] = helpers.calculate_age(t["player__birthDate"], today=today)
                     gameStats[t[pid]]["player__primaryPositionCode"] = getPosition(t["player__primaryPositionCode"])
+                    d1 = gameStats[t[pid]]["timeOnIce"]
+                    gameStats[t[pid]]["timeOnIce"] = datetime.timedelta(minutes=d1.minute, seconds=d1.second)
                 else:
                     gameStats[t[pid]]["games"] += 1
                     for key in t:
