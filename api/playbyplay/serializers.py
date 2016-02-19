@@ -17,7 +17,7 @@ class RecentGameSerializer(serializers.ModelSerializer):
         model = models.Game
         fields = ("gameType", "homeTeam", "score",
             "awayTeam", "corsi", "gameState", "dateTime",
-            "endDateTime", "date")
+            "endDateTime", "date", "gamePk")
 
     def GetGameType(self, obj):
         for item in constants.gameTypes:
