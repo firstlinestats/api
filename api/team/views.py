@@ -7,6 +7,7 @@ from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 import models
+import constants
 import serializers
 
 
@@ -22,7 +23,7 @@ class VenueViewSet(viewsets.ModelViewSet):
 
 
 class SeasonStatsViewSet(viewsets.ModelViewSet):
-    queryset = models.SeasonStats.objects.filter(date=str(models.SeasonStats.objects.latest('date').date))
+    queryset = models.SeasonStats.objects.filter(date=str(models.SeasonStats.objects.latest('date').date)).order_by("-date", "-points")
     serializer_class = serializers.SeasonStatsSerializer
 
 
@@ -41,13 +42,20 @@ class HistoricalCalculations(object):
 
     def do_work(self):
         season = models.SeasonStats.objects.values("season").latest("season")["season"]
-        season_data = models.SeasonStats.objects.values("date", "team__teamName", "points").filter(season=season)
+        season_data = models.SeasonStats.objects.values("date", "team__shortName", "team__division", "points").filter(season=season).order_by("date")
         teams = {}
         for s in season_data:
-            teamName = s["team__teamName"]
+            teamName = s["team__shortName"]
+            division = self.GetDivision(s["team__division"])
             date = s["date"]
             points = s["points"]
-            if s["team__teamName"] not in teams:
-                teams[teamName] = []
-            teams[teamName].append({"date": date, "points": points})
+            if teamName not in teams:
+                teams[teamName] = {"division": division, "history": []}
+            teams[teamName]["history"].append({"date": date, "points": points})
         return teams
+
+    def GetDivision(self, obj):
+        for field in constants.divisions:
+            if field[0] == obj:
+                return field[1]
+        return obj

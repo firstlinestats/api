@@ -21,4 +21,5 @@ urlpatterns = [
     url(r'^api-auth/', include('rest_framework.urls',
         namespace='rest_framework')),
     url(r'^api/team/', include('team.urls')),
+    url(r'^api/pbp/', include('playbyplay.urls')),
 ]
