@@ -22,4 +22,5 @@ urlpatterns = [
         namespace='rest_framework')),
     url(r'^api/team/', include('team.urls')),
     url(r'^api/pbp/', include('playbyplay.urls')),
+    url(r'^', include('rest_framework_swagger.urls')),
 ]
