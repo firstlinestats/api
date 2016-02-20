@@ -1,11 +1,17 @@
+import pytz
+
 from rest_framework import serializers
+
 from team.serializers import TeamSerializer
-import constants
+
 import models
+import constants
 
 
 class RecentGameSerializer(serializers.ModelSerializer):
     date = serializers.SerializerMethodField('GetDate')
+    dateTime = serializers.SerializerMethodField('GetStartDateTime')
+    endDateTime = serializers.SerializerMethodField('GetEndDateTime')
     gameState = serializers.SerializerMethodField('GetGameState')
     gameType = serializers.SerializerMethodField('GetGameType')
     corsi = serializers.SerializerMethodField('GetCorsi')
@@ -33,6 +39,14 @@ class RecentGameSerializer(serializers.ModelSerializer):
 
     def GetDate(self, obj):
         return obj.dateTime.date()
+
+    def GetStartDateTime(self, obj):
+        return obj.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%r")
+
+    def GetEndDateTime(self, obj):
+        if obj.endDateTime is not None:
+            return obj.endDateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%r")
+        return ""
 
     def GetScore(self, obj):
         return str(obj.homeScore) + "-" + str(obj.awayScore)
