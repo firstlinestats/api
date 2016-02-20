@@ -41,11 +41,11 @@ class RecentGameSerializer(serializers.ModelSerializer):
         return obj.dateTime.date()
 
     def GetStartDateTime(self, obj):
-        return obj.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%r")
+        return obj.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
 
     def GetEndDateTime(self, obj):
         if obj.endDateTime is not None:
-            return obj.endDateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%r")
+            return obj.endDateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
         return ""
 
     def GetScore(self, obj):

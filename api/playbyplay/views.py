@@ -41,7 +41,7 @@ class GameDataViewSet(viewsets.ViewSet):
         details["homeScore"] = game.homeScore
         details["awayScore"] = game.awayScore
         details["venue"] = str(game.venue)
-        details["date"] = game.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %r")
+        details["date"] = game.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %I:%M %p EST")
         gameData["details"] = details
         if game.gameState in ['3', '4', '5', '6', '7']:
             pbp = models.PlayByPlay.objects.filter(gamePk=gamePk)
