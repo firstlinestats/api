@@ -6,6 +6,8 @@ router = routers.DefaultRouter()
 router.register(r'recent', views.RecentGameViewSet)
 router.register(r'playerstats', views.PlayerGameStatsViewSet,
     base_name="PlayerStats")
+router.register(r'game', views.GameDataViewSet,
+    base_name="GameData")
 # Wire up our API using automatic URL routing.
 # Additionally, we include login URLs for the browsable API.
 urlpatterns = [

@@ -1,5 +1,5 @@
 from django.db.models import Q
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 
 from rest_framework import viewsets
 from rest_framework import filters
@@ -7,16 +7,170 @@ from rest_framework.response import Response
 from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
+import pytz
 import datetime
 import serializers
 
 import models
+import helper
 import helpers
 from player.helper import getPosition
 from playbyplay.constants import gameTypes
 
 
 # Create your views here.
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class GameDataViewSet(viewsets.ViewSet):
+    def list(self, request):
+        getValues = dict(request.GET)
+        gamePk = getValues.get("gamePk", None)
+        if gamePk is not None:
+            gamePk = int(gamePk[0])
+        else:
+            return Response({"details": "Game not found."})
+        gameData = {"details": {}, "teamData": [], "goalies": [],
+            "homeSkaters": [], "awaySkaters": []}
+
+
+        game = models.Game.objects.get(gamePk=gamePk)
+        details = {}
+        details["homeTeamName"] = game.homeTeam.teamName
+        details["awayTeamName"] = game.awayTeam.teamName
+        details["homeTeamAbbr"] = game.homeTeam.abbreviation
+        details["awayTeamAbbr"] = game.awayTeam.abbreviation
+        details["homeScore"] = game.homeScore
+        details["awayScore"] = game.awayScore
+        details["venue"] = str(game.venue)
+        details["date"] = game.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %r")
+        gameData["details"] = details
+        if game.gameState in ['3', '4', '5', '6', '7']:
+            pbp = models.PlayByPlay.objects.filter(gamePk=gamePk)
+            playerStats = models.PlayerGameStats.objects.filter(game=gamePk).order_by('team', 'player__lastName')
+            goalieStats = models.GoalieGameStats.objects.filter(game=gamePk)
+
+            homeTeam = helper.init_team()
+            homeTeam["teamName"] = game.homeTeam.teamName
+            homeTeam["teamAbbr"] = game.homeTeam.abbreviation
+            awayTeam = helper.init_team()
+            awayTeam["teamName"] = game.awayTeam.teamName
+            awayTeam["teamAbbr"] = game.awayTeam.abbreviation
+
+            """players = {}
+            for playerdata in playerStats:
+                player = helper.init_player()
+                player["name"] = playerdata.player.fullName
+                player["position"] = playerdata.player.primaryPositionCode
+                player["team"] = playerdata.team
+                players[playerdata.player_id] = player
+            for goaliedata in goalieStats:
+                player = helper.init_player()
+                player["name"] = goaliedata.player.fullName
+                player["position"] = goaliedata.player.primaryPositionCode
+                player["team"] = goaliedata.team
+                players[goaliedata.player_id] = player
+
+            poi_data = models.PlayerOnIce.objects\
+                .values("player_id", "play_id").filter(play__in=pbp)
+            onice = {}
+            for p in poi_data:
+                player_id = p["player_id"]
+                play_id = p["play_id"]
+                if play_id not in onice:
+                    onice[play_id] = set()
+                onice[play_id].add(player_id)
+
+            pip_data = models.PlayerInPlay.objects.values("play_id",
+                "player_id", "player_type").filter(play__in=pbp)
+
+            pos = 0
+            neg = 0
+            for play in pbp:
+                play_id = play.id
+                team = play.team
+                if play_id in onice:
+                    poi = onice[play_id]
+                    play_type = play.playType
+                    if play_type == "SHOT":
+                        if team == homeTeam["team"]:
+                            homeTeam["sf"] += 1
+                        else:
+                            awayTeam["sf"] += 1
+                        for pid in poi:
+                            if players[pid]["team"] == team:
+                                players[pid]["sf"] += 1
+                            else:
+                                players[pid]["sa"] += 1
+                    elif play_type == "GOAL":
+                        if team == homeTeam["team"]:
+                            homeTeam["gf"] += 1
+                            homeTeam["sf"] += 1
+                        else:
+                            awayTeam["gf"] += 1
+                            awayTeam["sf"] += 1
+                        for pid in poi:
+                            if players[pid]["team"] == team:
+                                players[pid]["gf"] += 1
+                            else:
+                                players[pid]["ga"] += 1
+                    elif play_type == "MISSED_SHOT":
+                        if team == homeTeam["team"]:
+                            homeTeam["msf"] += 1
+                        else:
+                            awayTeam["msf"] += 1
+                        for pid in poi:
+                            if players[pid]["team"] == team:
+                                players[pid]["msf"] += 1
+                            else:
+                                players[pid]["msa"] += 1
+                    elif play_type == "BLOCKED_SHOT":
+                        if team == homeTeam["team"]:
+                            homeTeam["bsf"] += 1
+                        else:
+                            awayTeam["bsf"] += 1
+                        for pid in poi:
+                            if players[pid]["team"] == team:
+                                players[pid]["bsf"] += 1
+                            else:
+                                players[pid]["bsa"] += 1
+
+            for pid in players:
+                player = players[pid]
+                player["cf"] = player["sf"] + player["msf"] + player["bsa"]
+                player["ca"] = player["sa"] + player["msa"] + player["bsf"]
+                player["ff"] = player["cf"] - player["bsa"]
+                player["fa"] = player["ca"] - player["bsf"]
+                player["g+-"] = player["gf"] - player["ga"]
+                player["p"] = player["g"] + player["a1"] + player["a2"]
+            homeTeam["cf"] = homeTeam["sf"] + homeTeam["gf"] + awayTeam["bsf"]
+            awayTeam["cf"] = awayTeam["sf"] + awayTeam["gf"] + homeTeam["bsf"]
+
+            # Get individual actions
+            type_sum = {1: "fo_w", 2: "fo_l", 3: "hit+", 4: "hit-",
+                5: "g", 6: "a1", 7: "icf", 8: "save", 9: "ab",
+                10: "pn-", 11: "pn+", 16: "a2"}
+            for pip in pip_data:
+                player = players[pip["player_id"]]
+                player_type = pip["player_type"]
+                if player_type == 1:
+                    if player["team"] == homeTeam["team"]:
+                        homeTeam["fo_w"] += 1
+                    else:
+                        awayTeam["fo_w"] += 1
+                elif player_type == 3:
+                    if player["team"] == homeTeam["team"]:
+                        homeTeam["hit+"] += 1
+                    else:
+                        awayTeam["hit+"] += 1
+                if player_type in type_sum:
+                    player[type_sum[player_type]] += 1"""
+
+            gameData["teamData"].append(homeTeam)
+            gameData["teamData"].append(awayTeam)
+
+
+        return Response(gameData)
+
+
 class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Game.objects.filter(dateTime__date__lte=datetime.date.today()).order_by('-dateTime', '-gamePk')[:30]
     serializer_class = serializers.RecentGameSerializer
