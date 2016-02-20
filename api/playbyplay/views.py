@@ -43,6 +43,7 @@ class GameDataViewSet(viewsets.ViewSet):
         details["venue"] = str(game.venue)
         details["date"] = game.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %I:%M %p EST")
         gameData["details"] = details
+
         if game.gameState in ['3', '4', '5', '6', '7']:
             pbp = models.PlayByPlay.objects.filter(gamePk=gamePk)
             playerStats = models.PlayerGameStats.objects.filter(game=gamePk).order_by('team', 'player__lastName')
@@ -55,18 +56,19 @@ class GameDataViewSet(viewsets.ViewSet):
             awayTeam["teamName"] = game.awayTeam.teamName
             awayTeam["teamAbbr"] = game.awayTeam.abbreviation
 
-            """players = {}
+            players = {}
             for playerdata in playerStats:
                 player = helper.init_player()
                 player["name"] = playerdata.player.fullName
                 player["position"] = playerdata.player.primaryPositionCode
-                player["team"] = playerdata.team
+                player["team"] = playerdata.team.teamName
                 players[playerdata.player_id] = player
             for goaliedata in goalieStats:
-                player = helper.init_player()
+                player = helper.init_goalie()
                 player["name"] = goaliedata.player.fullName
                 player["position"] = goaliedata.player.primaryPositionCode
-                player["team"] = goaliedata.team
+                player["team"] = goaliedata.team.teamName
+                player["teamAbbr"] = goaliedata.team.abbreviation
                 players[goaliedata.player_id] = player
 
             poi_data = models.PlayerOnIce.objects\
@@ -80,89 +82,114 @@ class GameDataViewSet(viewsets.ViewSet):
                 onice[play_id].add(player_id)
 
             pip_data = models.PlayerInPlay.objects.values("play_id",
-                "player_id", "player_type").filter(play__in=pbp)
+                "player_id", "player_type", "play__playType").filter(play__in=pbp)
 
             pos = 0
             neg = 0
+            found = set()
             for play in pbp:
                 play_id = play.id
-                team = play.team
+                if play.team is not None:
+                    team = play.team.teamName
                 if play_id in onice:
                     poi = onice[play_id]
                     play_type = play.playType
                     if play_type == "SHOT":
-                        if team == homeTeam["team"]:
+                        if team == homeTeam["teamName"]:
                             homeTeam["sf"] += 1
                         else:
                             awayTeam["sf"] += 1
                         for pid in poi:
-                            if players[pid]["team"] == team:
-                                players[pid]["sf"] += 1
-                            else:
-                                players[pid]["sa"] += 1
+                            if players[pid]["position"] != "G":
+                                if players[pid]["team"] == team:
+                                    players[pid]["sf"] += 1
+                                else:
+                                    players[pid]["sa"] += 1
                     elif play_type == "GOAL":
-                        if team == homeTeam["team"]:
+                        found.add(play.id)
+                        if team == homeTeam["teamName"]:
                             homeTeam["gf"] += 1
                             homeTeam["sf"] += 1
                         else:
                             awayTeam["gf"] += 1
                             awayTeam["sf"] += 1
                         for pid in poi:
-                            if players[pid]["team"] == team:
-                                players[pid]["gf"] += 1
+                            if players[pid]["position"] != "G":
+                                if players[pid]["team"] == team:
+                                    players[pid]["gf"] += 1
+                                else:
+                                    players[pid]["ga"] += 1
                             else:
-                                players[pid]["ga"] += 1
+                                if players[pid]["team"] != team:
+                                    # calculate goal danger
+                                    players[pid]["gu"] += 1
                     elif play_type == "MISSED_SHOT":
-                        if team == homeTeam["team"]:
+                        if team == homeTeam["teamName"]:
                             homeTeam["msf"] += 1
                         else:
                             awayTeam["msf"] += 1
                         for pid in poi:
-                            if players[pid]["team"] == team:
-                                players[pid]["msf"] += 1
-                            else:
-                                players[pid]["msa"] += 1
+                            if players[pid]["position"] != "G":
+                                if players[pid]["team"] == team:
+                                    players[pid]["msf"] += 1
+                                else:
+                                    players[pid]["msa"] += 1
                     elif play_type == "BLOCKED_SHOT":
-                        if team == homeTeam["team"]:
+                        if team == homeTeam["teamName"]:
                             homeTeam["bsf"] += 1
                         else:
                             awayTeam["bsf"] += 1
                         for pid in poi:
-                            if players[pid]["team"] == team:
-                                players[pid]["bsf"] += 1
-                            else:
-                                players[pid]["bsa"] += 1
+                            if players[pid]["position"] != "G":
+                                if players[pid]["team"] == team:
+                                    players[pid]["bsf"] += 1
+                                else:
+                                    players[pid]["bsa"] += 1
 
             for pid in players:
                 player = players[pid]
-                player["cf"] = player["sf"] + player["msf"] + player["bsa"]
-                player["ca"] = player["sa"] + player["msa"] + player["bsf"]
-                player["ff"] = player["cf"] - player["bsa"]
-                player["fa"] = player["ca"] - player["bsf"]
-                player["g+-"] = player["gf"] - player["ga"]
-                player["p"] = player["g"] + player["a1"] + player["a2"]
+                if player["position"] != "G":
+                    player["cf"] = player["sf"] + player["msf"] + player["bsa"]
+                    player["ca"] = player["sa"] + player["msa"] + player["bsf"]
+                    player["ff"] = player["cf"] - player["bsa"]
+                    player["fa"] = player["ca"] - player["bsf"]
+                    player["g+-"] = player["gf"] - player["ga"]
+                    player["p"] = player["g"] + player["a1"] + player["a2"]
             homeTeam["cf"] = homeTeam["sf"] + homeTeam["gf"] + awayTeam["bsf"]
             awayTeam["cf"] = awayTeam["sf"] + awayTeam["gf"] + homeTeam["bsf"]
 
             # Get individual actions
             type_sum = {1: "fo_w", 2: "fo_l", 3: "hit+", 4: "hit-",
-                5: "g", 6: "a1", 7: "icf", 8: "save", 9: "ab",
+                5: "g", 6: "a1", 7: "icf", 8: "su", 9: "ab",
                 10: "pn-", 11: "pn+", 16: "a2"}
             for pip in pip_data:
                 player = players[pip["player_id"]]
                 player_type = pip["player_type"]
                 if player_type == 1:
-                    if player["team"] == homeTeam["team"]:
+                    if player["team"] == homeTeam["teamName"]:
                         homeTeam["fo_w"] += 1
                     else:
                         awayTeam["fo_w"] += 1
                 elif player_type == 3:
-                    if player["team"] == homeTeam["team"]:
+                    if player["team"] == homeTeam["teamName"]:
                         homeTeam["hit+"] += 1
                     else:
                         awayTeam["hit+"] += 1
                 if player_type in type_sum:
-                    player[type_sum[player_type]] += 1"""
+                    if player_type == 5 and pip["play_id"] not in found:
+                        print pip["play_id"]
+                    player[type_sum[player_type]] += 1
+
+            for playerid in players:
+                player = players[playerid]
+                player["id"] = playerid
+                if player["position"] != "G":
+                    if player["team"] == homeTeam["teamName"]:
+                        gameData["homeSkaters"].append(player)
+                    else:
+                        gameData["awaySkaters"].append(player)
+                else:
+                    gameData["goalies"].append(player)
 
             gameData["teamData"].append(homeTeam)
             gameData["teamData"].append(awayTeam)
