@@ -1,3 +1,5 @@
+from __future__ import division
+
 from django.db.models import Q
 from django.shortcuts import render, get_object_or_404
 
@@ -62,12 +64,18 @@ class GameDataViewSet(viewsets.ViewSet):
                 player["name"] = playerdata.player.fullName
                 player["position"] = playerdata.player.primaryPositionCode
                 player["team"] = playerdata.team.teamName
+                player["toi"] = playerdata.timeOnIce
+                player["pptoi"] = playerdata.powerPlayTimeOnIce
+                player["shtoi"] = playerdata.shortHandedTimeOnIce
                 players[playerdata.player_id] = player
             for goaliedata in goalieStats:
                 player = helper.init_goalie()
                 player["name"] = goaliedata.player.fullName
                 player["position"] = goaliedata.player.primaryPositionCode
                 player["team"] = goaliedata.team.teamName
+                player["toi"] = playerdata.timeOnIce
+                player["pptoi"] = playerdata.powerPlayTimeOnIce
+                player["shtoi"] = playerdata.shortHandedTimeOnIce
                 player["teamAbbr"] = goaliedata.team.abbreviation
                 players[goaliedata.player_id] = player
 
@@ -87,6 +95,7 @@ class GameDataViewSet(viewsets.ViewSet):
             pos = 0
             neg = 0
             found = set()
+            count = 0
             for play in pbp:
                 play_id = play.id
                 if play.team is not None:
@@ -136,32 +145,59 @@ class GameDataViewSet(viewsets.ViewSet):
                                     players[pid]["msa"] += 1
                     elif play_type == "BLOCKED_SHOT":
                         if team == homeTeam["teamName"]:
-                            homeTeam["bsf"] += 1
-                        else:
                             awayTeam["bsf"] += 1
+                        else:
+                            homeTeam["bsf"] += 1
                         for pid in poi:
                             if players[pid]["position"] != "G":
                                 if players[pid]["team"] == team:
                                     players[pid]["bsf"] += 1
                                 else:
                                     players[pid]["bsa"] += 1
+                    elif play_type == "FACEOFF":
+                        if team == homeTeam["teamName"]:
+                            if play.xcoord > 0:
+                                homeTeam["zso"] += 1
+                            elif play.xcoord < 0:
+                                awayTeam["zso"] += 1
+                        count += 1
+            print count
 
             for pid in players:
                 player = players[pid]
                 if player["position"] != "G":
-                    player["cf"] = player["sf"] + player["msf"] + player["bsa"]
-                    player["ca"] = player["sa"] + player["msa"] + player["bsf"]
+                    player["cf"] = player["gf"] + player["sf"] + player["msf"] + player["bsa"]
+                    player["ca"] = player["ga"] + player["sa"] + player["msa"] + player["bsf"]
                     player["ff"] = player["cf"] - player["bsa"]
                     player["fa"] = player["ca"] - player["bsf"]
                     player["g+-"] = player["gf"] - player["ga"]
-                    player["p"] = player["g"] + player["a1"] + player["a2"]
-            homeTeam["cf"] = homeTeam["sf"] + homeTeam["gf"] + awayTeam["bsf"]
-            awayTeam["cf"] = awayTeam["sf"] + awayTeam["gf"] + homeTeam["bsf"]
+                    # Accounts for filters?
+                    timeOnIceSeconds = self.hms_to_seconds(player["toi"])
+                    player["sf60"] = round(player["sf"] / timeOnIceSeconds * 3600, 2)
+                    player["sa60"] = round(player["sa"] / timeOnIceSeconds * 3600, 2)
+                    player["cf60"] = round(player["cf"] / timeOnIceSeconds * 3600, 2)
+                    player["ca60"] = round(player["ca"] / timeOnIceSeconds * 3600, 2)
+                    player["ff60"] = round(player["ff"] / timeOnIceSeconds * 3600, 2)
+                    player["fa60"] = round(player["fa"] / timeOnIceSeconds * 3600, 2)
+
+            homeTeam["cf"] = homeTeam["msf"] + homeTeam["sf"] + homeTeam["gf"] + homeTeam["bsf"]
+            awayTeam["cf"] = awayTeam["msf"] + awayTeam["sf"] + awayTeam["gf"] + awayTeam["bsf"]
 
             # Get individual actions
-            type_sum = {1: "fo_w", 2: "fo_l", 3: "hit+", 4: "hit-",
-                5: "g", 6: "a1", 7: "icf", 8: "su", 9: "ab",
-                10: "pn-", 11: "pn+", 16: "a2"}
+            type_sum = {
+                1: "fo_w",
+                2: "fo_l",
+                3: "hit+",
+                4: "hit-",
+                5: "g",
+                6: "a1",
+                7: "icf",
+                8: "su",
+                9: "ab",
+                10: "pn-",
+                11: "pn+",
+                16: "a2"
+            }
             for pip in pip_data:
                 player = players[pip["player_id"]]
                 player_type = pip["player_type"]
@@ -175,9 +211,14 @@ class GameDataViewSet(viewsets.ViewSet):
                         homeTeam["hit+"] += 1
                     else:
                         awayTeam["hit+"] += 1
+                elif player_type == 10:
+                    if player["team"] == homeTeam["teamName"]:
+                        homeTeam["pn"] += 1
+                    else:
+                        awayTeam["pn"] += 1
                 if player_type in type_sum:
-                    if player_type == 5 and pip["play_id"] not in found:
-                        print pip["play_id"]
+                    if player_type == 5:
+                        player["icf"] += 1
                     player[type_sum[player_type]] += 1
 
             for playerid in players:
@@ -196,6 +237,10 @@ class GameDataViewSet(viewsets.ViewSet):
 
 
         return Response(gameData)
+
+    def hms_to_seconds(self, t):
+        h, m, s = [int(i) for i in str(t).split(':')]
+        return 3600*h + 60*m + s
 
 
 class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):
