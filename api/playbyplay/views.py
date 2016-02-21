@@ -15,7 +15,7 @@ import models
 import helper
 import helpers
 from player.helper import getPosition
-from playbyplay.constants import gameTypes
+from playbyplay.constants import gameTypes, gameStates
 
 
 # Create your views here.
@@ -202,6 +202,86 @@ class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = models.Game.objects.filter(dateTime__date__lte=datetime.date.today()).order_by('-dateTime', '-gamePk')[:30]
     serializer_class = serializers.RecentGameSerializer
 
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class GameListViewSet(viewsets.ViewSet):
+    def list(self, request):
+        currentSeason = models.Game.objects.latest("endDateTime").season
+        getValues = dict(request.GET)
+        for key in getValues:
+            val = getValues[key]
+            if len(val) == 0:
+                getValues.pop(key, None)
+        kwargs = {
+            'gameState__in' : [6,7,8],
+            'season' : currentSeason
+        }
+        args = ()
+        teams = None
+        if "teams" in getValues and len(getValues["teams"]) > 0:
+            teams = getValues["teams"]
+            args = ( Q(awayTeam__in = getValues['teams']) | Q(homeTeam__in = getValues['teams']), )
+        seasons = currentSeason
+        if "seasons" in getValues and len(getValues["seasons"]) > 0:
+            seasons = getValues["seasons"]
+            kwargs['season__in'] = seasons
+        venues = None
+        if 'venues' in getValues:
+            if getValues['venues'][0]:
+                kwargs['venue__name'] = getValues['venues'][0]
+        game_types = gameTypes
+        if "game_type" in getValues and len(getValues["game_type"]) > 0:
+            game_types = getValues["game_type"]
+            kwargs['gameType__in'] = game_types
+        if "date_start" in getValues and "date_end" in getValues:
+            try:
+                date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
+                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
+                print date_start
+                print date_end
+                kwargs['dateTime__gte'] = date_start
+                kwargs['dateTime__lte'] = date_end
+            except:
+                date_start = None
+                date_end = None
+        games = models.Game.objects\
+            .values('gamePk', 'dateTime', 'gameType', 'gameState', 'awayTeam', 'homeTeam', 'awayTeam__abbreviation', 
+                'homeTeam__abbreviation', 'homeTeam__id', 
+                'awayTeam__id', 'homeTeam__teamName', 'awayTeam__teamName', 'homeScore', 'awayScore', 'awayShots', 
+                'homeShots', 'awayBlocked', 'homeBlocked', 'awayMissed',
+                'homeMissed', 'gameState', 'endDateTime')\
+            .filter(*args, **kwargs).order_by('-gamePk')
+        gameList = []
+        for game in games:
+            g = {}
+
+            for item in gameTypes:
+                if item[0] == game['gameType']:
+                    g['gameType'] = item[1]
+            g['homeTeam'] = {"id" : game['homeTeam__id'], "name" :  game['homeTeam__teamName'], "abbreviation" : game['homeTeam__abbreviation']}
+            g['awayTeam'] = {"id" : game['awayTeam__id'], "name" : game['awayTeam__teamName'], "abbreviation" : game['awayTeam__abbreviation']}
+            g['score'] = str(game['homeScore']) + "-" + str(game['awayScore'])
+            for item in gameStates:
+                if item[0] == game['gameState']:
+                    g['gameState'] = item[1]
+            g['dateTime'] = game['dateTime'].astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
+            g['endDateTime'] = ''
+            if game['endDateTime'] is not None:
+                g['endDateTime'] = game['endDateTime'].astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
+            g['date'] = game['dateTime'].date()
+            g['gamePk'] = game['gamePk']
+            hShots = game['homeShots'] or 0
+            hScore = game['homeScore'] or 0
+            hMissed = game['homeMissed'] or 0
+            aBlocked = game['awayBlocked'] or 0
+            homeCorsi = hShots +hScore + hMissed + aBlocked
+            aShots = game['awayShots'] or 0
+            aScore = game['awayScore'] or 0
+            aMissed = game['awayMissed'] or 0
+            hBlocked = game['homeBlocked'] or 0
+            awayCorsi = aShots + aScore + aMissed + hBlocked
+            g['corsi'] = str(homeCorsi) + "/" + str(awayCorsi)
+            gameList.append(g)          
+        return Response(gameList)
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))
 class PlayerGameStatsViewSet(viewsets.ViewSet):
