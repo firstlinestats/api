@@ -31,7 +31,7 @@ class GameDataViewSet(viewsets.ViewSet):
         else:
             return Response({"details": "Game not found."})
         gameData = {"details": {}, "teamData": [], "goalies": [],
-            "homeSkaters": [], "awaySkaters": []}
+            "homeSkaters": [], "awaySkaters": [], "shotData": {"home": [], "away": []}}
 
 
         game = models.Game.objects.get(gamePk=gamePk)
@@ -97,6 +97,8 @@ class GameDataViewSet(viewsets.ViewSet):
             found = set()
             previous_play = None
             previous_period = 1
+            previous_shot = None
+            previous_danger = None
             for play in pbp:
                 add_play = False
                 if previous_play is not None and previous_period == play.period:
@@ -114,6 +116,15 @@ class GameDataViewSet(viewsets.ViewSet):
                     for pid in poi:
                         if add_play:
                             players[pid]["toi"] += addedTime
+                    if play_type in ["SHOT", "GOAL", "MISSED_SHOT", "BLOCKED_SHOT"]:
+                        danger = self.calculate_danger(play, previous_shot, previous_danger)
+                        previous_shot = play
+                        previous_danger = danger
+                        if team == homeTeam["teamName"]:
+                            xcoord = abs(play.xcoord)
+                            ycoord = play.ycoord
+                            gameData["shotData"]["home"].append({"x": xcoord,
+                                "y": ycoord, "type": play_type})
                     if play_type == "SHOT":
                         if team == homeTeam["teamName"]:
                             homeTeam["sf"] += 1
@@ -137,8 +148,10 @@ class GameDataViewSet(viewsets.ViewSet):
                             if players[pid]["position"] != "G":
                                 if players[pid]["team"] == team:
                                     players[pid]["gf"] += 1
+                                    players[pid]["sf"] += 1
                                 else:
                                     players[pid]["ga"] += 1
+                                    players[pid]["sa"] += 1
                             else:
                                 if players[pid]["team"] != team:
                                     # calculate goal danger
@@ -173,8 +186,6 @@ class GameDataViewSet(viewsets.ViewSet):
                             for pid in poi:
                                 if players[pid]["position"] != "G":
                                     if players[pid]["team"] == awayTeam["teamName"]:
-                                        if players[pid]["name"] == "Chris VandeVelde":
-                                            print 1
                                         players[pid]["zso"] += 1
                                     else:
                                         players[pid]["zsd"] += 1
@@ -185,16 +196,14 @@ class GameDataViewSet(viewsets.ViewSet):
                                     if players[pid]["team"] == homeTeam["teamName"]:
                                         players[pid]["zso"] += 1
                                     else:
-                                        if players[pid]["name"] == "Chris VandeVelde":
-                                            print 2
                                         players[pid]["zsd"] += 1
 
             for pid in players:
                 player = players[pid]
                 timeOnIceSeconds = player["toi"]
                 if player["position"] != "G":
-                    player["cf"] = player["gf"] + player["sf"] + player["msf"] + player["bsa"]
-                    player["ca"] = player["ga"] + player["sa"] + player["msa"] + player["bsf"]
+                    player["cf"] = player["sf"] + player["msf"] + player["bsa"]
+                    player["ca"] = player["sa"] + player["msa"] + player["bsf"]
                     player["ff"] = player["cf"] - player["bsa"]
                     player["fa"] = player["ca"] - player["bsf"]
                     player["g+-"] = player["gf"] - player["ga"]
@@ -245,6 +254,13 @@ class GameDataViewSet(viewsets.ViewSet):
                 if player_type in type_sum:
                     if player_type == 5:
                         player["icf"] += 1
+                    elif player_type == 7:
+                        if pip["play__playType"] == "BLOCKED_SHOT":
+                            player["bk"] += 1
+                        elif pip["play__playType"] == "MISSED_SHOT":
+                            player["ms"] += 1
+                        elif pip["play__playType"] == "SHOT":
+                            player["sh"] += 1
                     player[type_sum[player_type]] += 1
 
             for playerid in players:
@@ -263,6 +279,17 @@ class GameDataViewSet(viewsets.ViewSet):
 
 
         return Response(gameData)
+
+    def calculate_danger(self, shot, pshot, pdanger):
+        #print shot.xcoord, shot.ycoord, shot.period, shot.periodTime
+        # TODO: Normalize
+        xcoord = shot.xcoord
+        ycoord = shot.ycoord
+        # Calculate Location
+
+        # Depending on location, determine chance
+        #if abs(xcoord) <= 20 and abs(ycoord) >=
+        return "LOW"
 
     def seconds_to_hms(self, seconds):
         m, s = divmod(seconds, 60)
