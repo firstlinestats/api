@@ -329,6 +329,9 @@ class GameListViewSet(viewsets.ViewSet):
         }
         args = ()
         teams = None
+        if "game_state" in getValues and len(getValues["game_state"]) > 0:
+            states = getValues["game_state"]
+            kwargs['gameState__in'] = states
         if "teams" in getValues and len(getValues["teams"]) > 0:
             teams = getValues["teams"]
             args = ( Q(awayTeam__in = getValues['teams']) | Q(homeTeam__in = getValues['teams']), )
@@ -337,9 +340,9 @@ class GameListViewSet(viewsets.ViewSet):
             seasons = getValues["seasons"]
             kwargs['season__in'] = seasons
         venues = None
-        if 'venues' in getValues:
-            if getValues['venues'][0]:
-                kwargs['venue__name'] = getValues['venues'][0]
+        if "venues" in getValues and len(getValues["venues"]) > 0:
+            venues = getValues["venues"]
+            kwargs['game__venue__name__in'] = venues
         game_types = gameTypes
         if "game_type" in getValues and len(getValues["game_type"]) > 0:
             game_types = getValues["game_type"]
@@ -348,8 +351,6 @@ class GameListViewSet(viewsets.ViewSet):
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
                 date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
-                print date_start
-                print date_end
                 kwargs['dateTime__gte'] = date_start
                 kwargs['dateTime__lte'] = date_end
             except:
@@ -358,19 +359,18 @@ class GameListViewSet(viewsets.ViewSet):
         games = models.Game.objects\
             .values('gamePk', 'dateTime', 'gameType', 'gameState', 'awayTeam', 'homeTeam', 'awayTeam__abbreviation', 
                 'homeTeam__abbreviation', 'homeTeam__id', 
-                'awayTeam__id', 'homeTeam__teamName', 'awayTeam__teamName', 'homeScore', 'awayScore', 'awayShots', 
+                'awayTeam__id', 'homeTeam__shortName', 'awayTeam__shortName', 'homeScore', 'awayScore', 'awayShots', 
                 'homeShots', 'awayBlocked', 'homeBlocked', 'awayMissed',
                 'homeMissed', 'gameState', 'endDateTime')\
             .filter(*args, **kwargs).order_by('-gamePk')
         gameList = []
         for game in games:
             g = {}
-
             for item in gameTypes:
                 if item[0] == game['gameType']:
                     g['gameType'] = item[1]
-            g['homeTeam'] = {"id" : game['homeTeam__id'], "name" :  game['homeTeam__teamName'], "abbreviation" : game['homeTeam__abbreviation']}
-            g['awayTeam'] = {"id" : game['awayTeam__id'], "name" : game['awayTeam__teamName'], "abbreviation" : game['awayTeam__abbreviation']}
+            g['homeTeam'] = {"id" : game['homeTeam__id'], "name" :  game['homeTeam__shortName'], "abbreviation" : game['homeTeam__abbreviation']}
+            g['awayTeam'] = {"id" : game['awayTeam__id'], "name" : game['awayTeam__shortName'], "abbreviation" : game['awayTeam__abbreviation']}
             g['score'] = str(game['homeScore']) + "-" + str(game['awayScore'])
             for item in gameStates:
                 if item[0] == game['gameState']:
