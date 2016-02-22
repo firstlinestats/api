@@ -47,7 +47,7 @@ class GameDataViewSet(viewsets.ViewSet):
         gameData["details"] = details
 
         if game.gameState in ['3', '4', '5', '6', '7']:
-            pbp = models.PlayByPlay.objects.filter(gamePk=gamePk)
+            pbp = models.PlayByPlay.objects.filter(gamePk=gamePk).order_by("period", "periodTime")
             playerStats = models.PlayerGameStats.objects.filter(game=gamePk).order_by('team', 'player__lastName')
             goalieStats = models.GoalieGameStats.objects.filter(game=gamePk)
 
@@ -64,18 +64,20 @@ class GameDataViewSet(viewsets.ViewSet):
                 player["name"] = playerdata.player.fullName
                 player["position"] = playerdata.player.primaryPositionCode
                 player["team"] = playerdata.team.teamName
-                player["toi"] = playerdata.timeOnIce
-                player["pptoi"] = playerdata.powerPlayTimeOnIce
-                player["shtoi"] = playerdata.shortHandedTimeOnIce
+                #player["toi"] = playerdata.timeOnIce
+                #player["pptoi"] = playerdata.powerPlayTimeOnIce
+                #player["shtoi"] = playerdata.shortHandedTimeOnIce
+                player["toi"] = 0
                 players[playerdata.player_id] = player
             for goaliedata in goalieStats:
                 player = helper.init_goalie()
                 player["name"] = goaliedata.player.fullName
                 player["position"] = goaliedata.player.primaryPositionCode
                 player["team"] = goaliedata.team.teamName
-                player["toi"] = playerdata.timeOnIce
-                player["pptoi"] = playerdata.powerPlayTimeOnIce
-                player["shtoi"] = playerdata.shortHandedTimeOnIce
+                #player["toi"] = playerdata.timeOnIce
+                #player["pptoi"] = playerdata.powerPlayTimeOnIce
+                #player["shtoi"] = playerdata.shortHandedTimeOnIce
+                player["toi"] = 0
                 player["teamAbbr"] = goaliedata.team.abbreviation
                 players[goaliedata.player_id] = player
 
@@ -92,17 +94,26 @@ class GameDataViewSet(viewsets.ViewSet):
             pip_data = models.PlayerInPlay.objects.values("play_id",
                 "player_id", "player_type", "play__playType").filter(play__in=pbp)
 
-            pos = 0
-            neg = 0
             found = set()
-            count = 0
+            previous_play = None
+            previous_period = 1
             for play in pbp:
+                add_play = False
+                if previous_play is not None and previous_period == play.period:
+                    addedTime = self.diff_times_in_seconds(previous_play, play.periodTime)
+                    add_play = True
+                elif previous_period != play.period:
+                    previous_period = play.period
+                previous_play = play.periodTime
                 play_id = play.id
                 if play.team is not None:
                     team = play.team.teamName
                 if play_id in onice:
                     poi = onice[play_id]
                     play_type = play.playType
+                    for pid in poi:
+                        if add_play:
+                            players[pid]["toi"] += addedTime
                     if play_type == "SHOT":
                         if team == homeTeam["teamName"]:
                             homeTeam["sf"] += 1
@@ -155,30 +166,46 @@ class GameDataViewSet(viewsets.ViewSet):
                                 else:
                                     players[pid]["bsa"] += 1
                     elif play_type == "FACEOFF":
-                        if team == homeTeam["teamName"]:
-                            if play.xcoord > 0:
-                                homeTeam["zso"] += 1
-                            elif play.xcoord < 0:
-                                awayTeam["zso"] += 1
-                        count += 1
-            print count
+                        if play.period == 2:
+                            play.xcoord = -play.xcoord
+                        if play.xcoord > 25.00:
+                            awayTeam["zso"] += 1
+                            for pid in poi:
+                                if players[pid]["position"] != "G":
+                                    if players[pid]["team"] == awayTeam["teamName"]:
+                                        if players[pid]["name"] == "Chris VandeVelde":
+                                            print 1
+                                        players[pid]["zsd"] += 1
+                                    else:
+                                        players[pid]["zso"] += 1
+                        elif play.xcoord < -25.00:
+                            homeTeam["zso"] += 1
+                            for pid in poi:
+                                if players[pid]["position"] != "G":
+                                    if players[pid]["team"] == homeTeam["teamName"]:
+                                        players[pid]["zso"] += 1
+                                    else:
+
+                                        if players[pid]["name"] == "Chris VandeVelde":
+                                            print 2
+                                        players[pid]["zsd"] += 1
 
             for pid in players:
                 player = players[pid]
+                timeOnIceSeconds = player["toi"]
                 if player["position"] != "G":
                     player["cf"] = player["gf"] + player["sf"] + player["msf"] + player["bsa"]
                     player["ca"] = player["ga"] + player["sa"] + player["msa"] + player["bsf"]
                     player["ff"] = player["cf"] - player["bsa"]
                     player["fa"] = player["ca"] - player["bsf"]
                     player["g+-"] = player["gf"] - player["ga"]
-                    # Accounts for filters?
-                    timeOnIceSeconds = self.hms_to_seconds(player["toi"])
                     player["sf60"] = round(player["sf"] / timeOnIceSeconds * 3600, 2)
                     player["sa60"] = round(player["sa"] / timeOnIceSeconds * 3600, 2)
                     player["cf60"] = round(player["cf"] / timeOnIceSeconds * 3600, 2)
                     player["ca60"] = round(player["ca"] / timeOnIceSeconds * 3600, 2)
                     player["ff60"] = round(player["ff"] / timeOnIceSeconds * 3600, 2)
                     player["fa60"] = round(player["fa"] / timeOnIceSeconds * 3600, 2)
+                player["toi"] = self.seconds_to_hms(timeOnIceSeconds)
 
             homeTeam["cf"] = homeTeam["msf"] + homeTeam["sf"] + homeTeam["gf"] + homeTeam["bsf"]
             awayTeam["cf"] = awayTeam["msf"] + awayTeam["sf"] + awayTeam["gf"] + awayTeam["bsf"]
@@ -194,8 +221,8 @@ class GameDataViewSet(viewsets.ViewSet):
                 7: "icf",
                 8: "su",
                 9: "ab",
-                10: "pn-",
-                11: "pn+",
+                10: "pn+",
+                11: "pn-",
                 16: "a2"
             }
             for pip in pip_data:
@@ -238,9 +265,23 @@ class GameDataViewSet(viewsets.ViewSet):
 
         return Response(gameData)
 
+    def seconds_to_hms(self, seconds):
+        m, s = divmod(seconds, 60)
+        return "%02d:%02d" % (m, s)
+
     def hms_to_seconds(self, t):
-        h, m, s = [int(i) for i in str(t).split(':')]
-        return 3600*h + 60*m + s
+        if t is not None:
+            h, m, s = [int(i) for i in str(t).split(':')]
+            return 3600*h + 60*m + s
+        return None
+
+    def diff_times_in_seconds(self, t1, t2):
+        # assumes t1 & t2 are python times, on the same day and t2 is after t1
+        m1, s1, _ = t1.hour, t1.minute, t1.second
+        m2, s2, _ = t2.hour, t2.minute, t2.second
+        t1_secs = s1 + 60 * m1
+        t2_secs = s2 + 60 * m2
+        return( t2_secs - t1_secs)
 
 
 class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):

@@ -12,7 +12,7 @@ def get_player_type(given):
 def init_player():
     numberkeys = ["g", "a1", "a2", "cf", "ca", "ff", "fa", "g+-", "fo_w", "fo_l",
     "hit+", "hit-", "pn+", "pn-", "gf", "ga", "sf", "sa", "msf", "msa", "bsf", "bsa",
-    "icf", "save", "ab", "ihsc", "isc", "zso", "zsd"]
+    "icf", "save", "ab", "bk", "ihsc", "isc", "zso", "zsd", "scf", "sca"]
     strkeys = ["name", "position", "team"]
     player = {}
     for n in numberkeys:
