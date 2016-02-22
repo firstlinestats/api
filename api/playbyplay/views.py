@@ -166,26 +166,25 @@ class GameDataViewSet(viewsets.ViewSet):
                                 else:
                                     players[pid]["bsa"] += 1
                     elif play_type == "FACEOFF":
-                        if play.period == 2:
+                        if play.period == 2 or play.period == 4:
                             play.xcoord = -play.xcoord
-                        if play.xcoord > 25.00:
+                        if play.xcoord < -25.00:
                             awayTeam["zso"] += 1
                             for pid in poi:
                                 if players[pid]["position"] != "G":
                                     if players[pid]["team"] == awayTeam["teamName"]:
                                         if players[pid]["name"] == "Chris VandeVelde":
                                             print 1
-                                        players[pid]["zsd"] += 1
-                                    else:
                                         players[pid]["zso"] += 1
-                        elif play.xcoord < -25.00:
+                                    else:
+                                        players[pid]["zsd"] += 1
+                        elif play.xcoord > 25.00:
                             homeTeam["zso"] += 1
                             for pid in poi:
                                 if players[pid]["position"] != "G":
                                     if players[pid]["team"] == homeTeam["teamName"]:
                                         players[pid]["zso"] += 1
                                     else:
-
                                         if players[pid]["name"] == "Chris VandeVelde":
                                             print 2
                                         players[pid]["zsd"] += 1
