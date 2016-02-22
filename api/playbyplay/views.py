@@ -99,6 +99,9 @@ class GameDataViewSet(viewsets.ViewSet):
             previous_period = 1
             previous_shot = None
             previous_danger = None
+            previous = None
+            scs = {}
+            count = 0
             for play in pbp:
                 add_play = False
                 if previous_play is not None and previous_period == play.period:
@@ -113,18 +116,47 @@ class GameDataViewSet(viewsets.ViewSet):
                 if play_id in onice:
                     poi = onice[play_id]
                     play_type = play.playType
+                    if add_play:
+                        homeTeam["toi"] += addedTime
+                        awayTeam["toi"] += addedTime
                     for pid in poi:
                         if add_play:
                             players[pid]["toi"] += addedTime
                     if play_type in ["SHOT", "GOAL", "MISSED_SHOT", "BLOCKED_SHOT"]:
-                        danger = self.calculate_danger(play, previous_shot, previous_danger)
+                        danger, sc = self.calculate_scoring_chance(play, previous_shot, previous_danger, previous)
                         previous_shot = play
                         previous_danger = danger
+                        count += sc
+                        scs[play_id] = {"sc": sc, "danger": danger}
+                        for pid in poi:
+                            player = players[pid]
+                            if player["position"] != "G":
+                                if player["team"] == team:
+                                    player["scf"] += sc
+                                else:
+                                    player["sca"] += sc
                         if team == homeTeam["teamName"]:
-                            xcoord = abs(play.xcoord)
+                            homeTeam["scf"] += sc
+                        else:
+                            awayTeam["scf"] += sc
+                        if team == homeTeam["teamName"]:
+                            xcoord = play.xcoord
                             ycoord = play.ycoord
+                            if xcoord < 0:
+                                xcoord = abs(xcoord)
+                                ycoord = -ycoord
                             gameData["shotData"]["home"].append({"x": xcoord,
-                                "y": ycoord, "type": play_type})
+                                "y": ycoord, "type": play_type, "danger": danger,
+                                "scoring_chance": sc})
+                        else:
+                            xcoord = play.xcoord
+                            ycoord = play.ycoord
+                            if xcoord > 0:
+                                xcoord = -xcoord
+                                ycoord = -ycoord
+                            gameData["shotData"]["away"].append({"x": xcoord,
+                                "y": ycoord, "type": play_type, "danger": danger,
+                                "scoring_chance": sc})
                     if play_type == "SHOT":
                         if team == homeTeam["teamName"]:
                             homeTeam["sf"] += 1
@@ -155,7 +187,14 @@ class GameDataViewSet(viewsets.ViewSet):
                             else:
                                 if players[pid]["team"] != team:
                                     # calculate goal danger
-                                    players[pid]["gu"] += 1
+                                    if danger == "LOW":
+                                        players[pid]["gl"] += 1
+                                    elif danger == "MEDIUM":
+                                        players[pid]["gm"] += 1
+                                    elif danger == "HIGH":
+                                        players[pid]["gh"] += 1
+                                    else:
+                                        players[pid]["gu"] += 1
                     elif play_type == "MISSED_SHOT":
                         if team == homeTeam["teamName"]:
                             homeTeam["msf"] += 1
@@ -197,6 +236,7 @@ class GameDataViewSet(viewsets.ViewSet):
                                         players[pid]["zso"] += 1
                                     else:
                                         players[pid]["zsd"] += 1
+                previous = play
 
             for pid in players:
                 player = players[pid]
@@ -214,9 +254,10 @@ class GameDataViewSet(viewsets.ViewSet):
                     player["ff60"] = round(player["ff"] / timeOnIceSeconds * 3600, 2)
                     player["fa60"] = round(player["fa"] / timeOnIceSeconds * 3600, 2)
                 player["toi"] = self.seconds_to_hms(timeOnIceSeconds)
-
-            homeTeam["cf"] = homeTeam["msf"] + homeTeam["sf"] + homeTeam["gf"] + homeTeam["bsf"]
-            awayTeam["cf"] = awayTeam["msf"] + awayTeam["sf"] + awayTeam["gf"] + awayTeam["bsf"]
+            homeTeam["toi"] = self.seconds_to_hms(homeTeam["toi"])
+            awayTeam["toi"] = self.seconds_to_hms(awayTeam["toi"])
+            homeTeam["cf"] = homeTeam["msf"] + homeTeam["sf"] + homeTeam["bsf"]
+            awayTeam["cf"] = awayTeam["msf"] + awayTeam["sf"] + awayTeam["bsf"]
 
             # Get individual actions
             type_sum = {
@@ -255,12 +296,23 @@ class GameDataViewSet(viewsets.ViewSet):
                     if player_type == 5:
                         player["icf"] += 1
                     elif player_type == 7:
+                        player["isc"] += scs[pip["play_id"]]["sc"]
                         if pip["play__playType"] == "BLOCKED_SHOT":
                             player["bk"] += 1
                         elif pip["play__playType"] == "MISSED_SHOT":
                             player["ms"] += 1
                         elif pip["play__playType"] == "SHOT":
                             player["sh"] += 1
+                    elif player_type == 8:
+                        if scs[pip["play_id"]]["danger"] == "LOW":
+                            player["sl"] += 1
+                            player["su"] -= 1
+                        elif scs[pip["play_id"]]["danger"] == "MEDIUM":
+                            player["sm"] += 1
+                            player["su"] -= 1
+                        elif scs[pip["play_id"]]["danger"] == "HIGH":
+                            player["sh"] += 1
+                            player["su"] -= 1
                     player[type_sum[player_type]] += 1
 
             for playerid in players:
@@ -277,19 +329,109 @@ class GameDataViewSet(viewsets.ViewSet):
             gameData["teamData"].append(homeTeam)
             gameData["teamData"].append(awayTeam)
 
-
         return Response(gameData)
 
-    def calculate_danger(self, shot, pshot, pdanger):
-        #print shot.xcoord, shot.ycoord, shot.period, shot.periodTime
+    def calculate_rebound(self, shot, pshot):
+        if pshot is not None and shot.period == pshot.period:
+            if shot.team == pshot.team and pshot.shotType != "GOAL":
+                diff = self.diff_times_in_seconds(shot.periodTime,
+                    pshot.periodTime)
+                if diff <= 3:
+                    return True
+        return False
+
+    def calculate_rush(self, shot, pplay):
+        if pplay is not None and shot.period == pplay.period:
+            diff = self.diff_times_in_seconds(shot.periodTime,
+                pplay.periodTime)
+            sx = shot.xcoord
+            px = pplay.xcoord
+            if sx > 0:
+                if px > 0:
+                    return True
+            else:
+                if px < 0:
+                    return True
+        return False
+
+    def calculate_scoring_chance(self, shot, pshot, pdanger, pplay):
+        rebound = self.calculate_rebound(shot, pshot)
+        rush = self.calculate_rush(shot, pplay)
+        # if rebound, scoring_chance
+        zone = self.calculate_danger_zone(shot, pshot, pdanger)
+        if zone == "LOW":
+            if rebound and shot.playType != "BLOCKED_SHOT":
+                return zone, 1
+            elif rush is True:
+                return zone, 1
+        elif zone == "MEDIUM":
+            if shot.playType != "BLOCKED_SHOT":
+                return zone, 1
+        else:
+            return zone, 1
+        return zone, 0
+
+    def calculate_danger_zone(self, shot, pshot, pdanger):
         # TODO: Normalize
         xcoord = shot.xcoord
         ycoord = shot.ycoord
         # Calculate Location
-
-        # Depending on location, determine chance
-        #if abs(xcoord) <= 20 and abs(ycoord) >=
+        poly =  [(89, -9),
+        (69, -22), (54, -22),
+        (54, -9), (44, -9),
+        (44, 9), (54, 9),
+        (54, 22), (69, 22),
+        (89, 9), (89, -9)]
+        highpoly = [(89, -9),
+        (69, -9), (69, 9),
+        (89, 9), (89, -9)]
+        if self.point_inside_polygon(xcoord, ycoord, highpoly) is True:
+            return "HIGH"
+        elif self.point_inside_polygon(xcoord, ycoord, poly) is True:
+            return "MEDIUM"
         return "LOW"
+
+    def point_inside_polygon(self, x, y, poly):
+        # check if point is a vertex
+        x = float(x)
+        y = float(y)
+        if x < 0:
+            x = abs(x)
+            y = -y
+        if (x,y) in poly: return True
+
+        # check if point is on a boundary
+        for i in range(len(poly)):
+            p1 = None
+            p2 = None
+            if i==0:
+                p1 = poly[0]
+                p2 = poly[1]
+            else:
+                p1 = poly[i-1]
+                p2 = poly[i]
+            if p1[1] == p2[1] and p1[1] == y and x > min(p1[0], p2[0]) and x < max(p1[0], p2[0]):
+                return True
+          
+        n = len(poly)
+        inside = False
+
+        p1x,p1y = poly[0]
+        for i in range(n+1):
+            p2x,p2y = poly[i % n]
+            if y > min(p1y,p2y):
+                if y <= max(p1y,p2y):
+                    if x <= max(p1x,p2x):
+                        if p1y != p2y:
+                            xints = (y-p1y)*(p2x-p1x)/(p2y-p1y)+p1x
+                        if p1x == p2x or x <= xints:
+                            inside = not inside
+            p1x,p1y = p2x,p2y
+
+        if inside:
+            return True
+        else:
+            return False
 
     def seconds_to_hms(self, seconds):
         m, s = divmod(seconds, 60)
