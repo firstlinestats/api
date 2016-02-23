@@ -126,19 +126,24 @@ class GameDataViewSet(viewsets.ViewSet):
                         danger, sc = self.calculate_scoring_chance(play, previous_shot, previous_danger, previous)
                         previous_shot = play
                         previous_danger = danger
-                        count += sc
                         scs[play_id] = {"sc": sc, "danger": danger}
                         for pid in poi:
                             player = players[pid]
                             if player["position"] != "G":
                                 if player["team"] == team:
-                                    player["scf"] += sc
+                                    player["scf"] += 1
                                 else:
-                                    player["sca"] += sc
+                                    player["sca"] += 1
                         if team == homeTeam["teamName"]:
-                            homeTeam["scf"] += sc
+                            if sc == 1:
+                                homeTeam["scf"] += 1
+                            elif sc == 2:
+                                homeTeam["hscf"] += 1
                         else:
-                            awayTeam["scf"] += sc
+                            if sc == 1:
+                                awayTeam["scf"] += 1
+                            elif sc == 2:
+                                awayTeam["hscf"] += 1
                         if team == homeTeam["teamName"]:
                             xcoord = play.xcoord
                             ycoord = play.ycoord
@@ -296,7 +301,11 @@ class GameDataViewSet(viewsets.ViewSet):
                     if player_type == 5:
                         player["icf"] += 1
                     elif player_type == 7:
-                        player["isc"] += scs[pip["play_id"]]["sc"]
+                        sc = scs[pip["play_id"]]["sc"]
+                        if sc == 1:
+                            player["isc"] += 1
+                        elif sc == 2:
+                            player["ihsc"] += 1
                         if pip["play__playType"] == "BLOCKED_SHOT":
                             player["bk"] += 1
                         elif pip["play__playType"] == "MISSED_SHOT":
@@ -336,7 +345,7 @@ class GameDataViewSet(viewsets.ViewSet):
             if shot.team == pshot.team and pshot.shotType != "GOAL":
                 diff = self.diff_times_in_seconds(shot.periodTime,
                     pshot.periodTime)
-                if diff <= 3:
+                if diff >= -3:
                     return True
         return False
 
@@ -359,6 +368,13 @@ class GameDataViewSet(viewsets.ViewSet):
         rush = self.calculate_rush(shot, pplay)
         # if rebound, scoring_chance
         zone = self.calculate_danger_zone(shot, pshot, pdanger)
+        # "prevcurrtime" "cblockreb2", "cmissreb2", "shotreb2", "cblockreb3",
+        # "cmissreb3", "shotreb3", "rushn4", "rusho4"
+        if rebound:
+            return zone, 2
+        elif rush and self.diff_times_in_seconds(shot.periodTime,
+                pplay.periodTime) >= -4:
+            return zone, 2
         if zone == "LOW":
             if rebound and shot.playType != "BLOCKED_SHOT":
                 return zone, 1
