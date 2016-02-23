@@ -4,8 +4,8 @@ from datetime import date
 
 
 def combine_time(d1, d2):
-    dt1 = datetime.timedelta(minutes=d1.minute, seconds=d1.second)
-    dt2 = datetime.timedelta(minutes=d2.minute, seconds=d2.second)
+    dt1 = datetime.timedelta(hours=d1.hour, minutes=d1.minute, seconds=d1.second)
+    dt2 = datetime.timedelta(hours=d2.hour, minutes=d2.minute, seconds=d2.second)
     fin = dt1 + dt2
     return fin
 
