@@ -26,10 +26,24 @@ class GameDataViewSet(viewsets.ViewSet):
     def list(self, request):
         getValues = dict(request.GET)
         gamePk = getValues.get("gamePk", None)
+        period = getValues.get("periodOption", None)
+        teamStrengths = getValues.get("teamStrengths", None)
+        scoreSituation = getValues.get("scoreSituation", None)
+        if scoreSituation is not None:
+            scoreSituation = scoreSituation[0]
+        if teamStrengths is not None:
+            teamStrengths = teamStrengths[0]
+        args = ()
         if gamePk is not None:
             gamePk = int(gamePk[0])
         else:
             return Response({"details": "Game not found."})
+        kwargs = {"gamePk": gamePk}
+        if period is not None:
+            try:
+                kwargs["period"] = int(period[0])
+            except:
+                pass
         gameData = {"details": {}, "teamData": [], "goalies": [],
             "homeSkaters": [], "awaySkaters": [], "shotData": {"home": [], "away": []}}
 
@@ -47,7 +61,7 @@ class GameDataViewSet(viewsets.ViewSet):
         gameData["details"] = details
 
         if game.gameState in ['3', '4', '5', '6', '7']:
-            pbp = models.PlayByPlay.objects.filter(gamePk=gamePk).order_by("period", "periodTime")
+            pbp = models.PlayByPlay.objects.filter(*args, **kwargs).order_by("period", "periodTime")
             playerStats = models.PlayerGameStats.objects.filter(game=gamePk).order_by('team', 'player__lastName')
             goalieStats = models.GoalieGameStats.objects.filter(game=gamePk)
 
@@ -82,17 +96,32 @@ class GameDataViewSet(viewsets.ViewSet):
                 players[goaliedata.player_id] = player
 
             poi_data = models.PlayerOnIce.objects\
-                .values("player_id", "play_id").filter(play__in=pbp)
+                .values("player_id", "play_id", "play__homeScore", "play__awayScore").filter(play__in=pbp)
             onice = {}
+            home = {}
+            away = {}
             for p in poi_data:
                 player_id = p["player_id"]
                 play_id = p["play_id"]
+                homeScore = p["play__homeScore"]
+                awayScore = p["play__awayScore"]
                 if play_id not in onice:
                     onice[play_id] = set()
+                if play_id not in home:
+                    home[play_id] = {"count": 0, "goalie": True, "score": homeScore}
+                    away[play_id] = {"count": 0, "goalie": True, "score": awayScore}
+                if players[player_id]["team"] == homeTeam["teamName"]:
+                    if players[player_id]["position"] == "G":
+                        home[play_id]["goalie"] = False
+                    home[play_id]["count"] += 1
+                else:
+                    if players[player_id]["position"] == "G":
+                        away[play_id]["goalie"] = False
+                    away[play_id]["count"] += 1
                 onice[play_id].add(player_id)
 
             pip_data = models.PlayerInPlay.objects.values("play_id",
-                "player_id", "player_type", "play__playType").filter(play__in=pbp)
+                "player_id", "player_type", "play__playType", "play__team__teamName").filter(play__in=pbp).order_by("play__period", "play__periodTime")
 
             found = set()
             previous_play = None
@@ -102,6 +131,8 @@ class GameDataViewSet(viewsets.ViewSet):
             previous = None
             scs = {}
             count = 0
+            hsc = 0
+            asc = 0
             for play in pbp:
                 add_play = False
                 if previous_play is not None and previous_period == play.period:
@@ -111,17 +142,27 @@ class GameDataViewSet(viewsets.ViewSet):
                     previous_period = play.period
                 previous_play = play.periodTime
                 play_id = play.id
+                homeinclude, awayinclude = self.check_play(home, away, play_id, teamStrengths, scoreSituation, hsc, asc)
+                if play.playType == "GOAL":
+                    if play.team.teamName == homeTeam["teamName"]:
+                        hsc += 1
+                    else:
+                        asc += 1
                 if play.team is not None:
                     team = play.team.teamName
                 if play_id in onice:
                     poi = onice[play_id]
                     play_type = play.playType
                     if add_play:
-                        homeTeam["toi"] += addedTime
-                        awayTeam["toi"] += addedTime
+                        if homeinclude:
+                            homeTeam["toi"] += addedTime
+                        if awayinclude:
+                            awayTeam["toi"] += addedTime
                     for pid in poi:
                         if add_play:
-                            players[pid]["toi"] += addedTime
+                            if (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                    (players[pid]["team"] == awayTeam["teamName"] and awayinclude):
+                                players[pid]["toi"] += addedTime
                     if play_type in ["SHOT", "GOAL", "MISSED_SHOT", "BLOCKED_SHOT"]:
                         danger, sc = self.calculate_scoring_chance(play, previous_shot, previous_danger, previous)
                         previous_shot = play
@@ -129,22 +170,23 @@ class GameDataViewSet(viewsets.ViewSet):
                         scs[play_id] = {"sc": sc, "danger": danger}
                         for pid in poi:
                             player = players[pid]
-                            if player["position"] != "G":
+                            if player["position"] != "G" and ((players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                    (players[pid]["team"] == awayTeam["teamName"] and awayinclude)):
                                 if player["team"] == team:
                                     player["scf"] += 1
                                 else:
                                     player["sca"] += 1
                         if team == homeTeam["teamName"]:
-                            if sc == 1:
+                            if sc == 1 and homeinclude:
                                 homeTeam["scf"] += 1
-                            elif sc == 2:
+                            elif sc == 2 and homeinclude:
                                 homeTeam["hscf"] += 1
                         else:
-                            if sc == 1:
+                            if sc == 1 and awayinclude:
                                 awayTeam["scf"] += 1
-                            elif sc == 2:
+                            elif sc == 2 and awayinclude:
                                 awayTeam["hscf"] += 1
-                        if team == homeTeam["teamName"]:
+                        if team == homeTeam["teamName"] and homeinclude:
                             xcoord = play.xcoord
                             ycoord = play.ycoord
                             if xcoord < 0:
@@ -153,7 +195,7 @@ class GameDataViewSet(viewsets.ViewSet):
                             gameData["shotData"]["home"].append({"x": xcoord,
                                 "y": ycoord, "type": play_type, "danger": danger,
                                 "scoring_chance": sc})
-                        else:
+                        elif team == awayTeam["teamName"] and awayinclude:
                             xcoord = play.xcoord
                             ycoord = play.ycoord
                             if xcoord > 0:
@@ -163,61 +205,70 @@ class GameDataViewSet(viewsets.ViewSet):
                                 "y": ycoord, "type": play_type, "danger": danger,
                                 "scoring_chance": sc})
                     if play_type == "SHOT":
-                        if team == homeTeam["teamName"]:
+                        if team == homeTeam["teamName"] and homeinclude:
                             homeTeam["sf"] += 1
-                        else:
+                        elif team == awayTeam["teamName"] and awayinclude:
                             awayTeam["sf"] += 1
                         for pid in poi:
-                            if players[pid]["position"] != "G":
+                            include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                            if players[pid]["position"] != "G" and include:
                                 if players[pid]["team"] == team:
                                     players[pid]["sf"] += 1
                                 else:
                                     players[pid]["sa"] += 1
                     elif play_type == "GOAL":
                         found.add(play.id)
-                        if team == homeTeam["teamName"]:
+                        if team == homeTeam["teamName"] and homeinclude:
                             homeTeam["gf"] += 1
                             homeTeam["sf"] += 1
-                        else:
+                        elif team == awayTeam["teamName"] and awayinclude:
                             awayTeam["gf"] += 1
                             awayTeam["sf"] += 1
                         for pid in poi:
-                            if players[pid]["position"] != "G":
-                                if players[pid]["team"] == team:
-                                    players[pid]["gf"] += 1
-                                    players[pid]["sf"] += 1
-                                else:
-                                    players[pid]["ga"] += 1
-                                    players[pid]["sa"] += 1
-                            else:
-                                if players[pid]["team"] != team:
-                                    # calculate goal danger
-                                    if danger == "LOW":
-                                        players[pid]["gl"] += 1
-                                    elif danger == "MEDIUM":
-                                        players[pid]["gm"] += 1
-                                    elif danger == "HIGH":
-                                        players[pid]["gh"] += 1
+                            include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                            if include:
+                                if players[pid]["position"] != "G":
+                                    if players[pid]["team"] == team:
+                                        players[pid]["gf"] += 1
+                                        players[pid]["sf"] += 1
                                     else:
-                                        players[pid]["gu"] += 1
+                                        players[pid]["ga"] += 1
+                                        players[pid]["sa"] += 1
+                                else:
+                                    if players[pid]["team"] != team:
+                                        # calculate goal danger
+                                        if danger == "LOW":
+                                            players[pid]["gl"] += 1
+                                        elif danger == "MEDIUM":
+                                            players[pid]["gm"] += 1
+                                        elif danger == "HIGH":
+                                            players[pid]["gh"] += 1
+                                        else:
+                                            players[pid]["gu"] += 1
                     elif play_type == "MISSED_SHOT":
-                        if team == homeTeam["teamName"]:
+                        if team == homeTeam["teamName"] and homeinclude:
                             homeTeam["msf"] += 1
-                        else:
+                        elif team == awayTeam["teamName"] and awayinclude:
                             awayTeam["msf"] += 1
                         for pid in poi:
-                            if players[pid]["position"] != "G":
+                            include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                            if players[pid]["position"] != "G" and include:
                                 if players[pid]["team"] == team:
                                     players[pid]["msf"] += 1
                                 else:
                                     players[pid]["msa"] += 1
                     elif play_type == "BLOCKED_SHOT":
-                        if team == homeTeam["teamName"]:
+                        if team == homeTeam["teamName"] and awayinclude:
                             awayTeam["bsf"] += 1
-                        else:
+                        elif team == awayTeam["teamName"] and homeinclude:
                             homeTeam["bsf"] += 1
                         for pid in poi:
-                            if players[pid]["position"] != "G":
+                            include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                            if players[pid]["position"] != "G" and include:
                                 if players[pid]["team"] == team:
                                     players[pid]["bsf"] += 1
                                 else:
@@ -225,18 +276,22 @@ class GameDataViewSet(viewsets.ViewSet):
                     elif play_type == "FACEOFF":
                         if play.period == 2 or play.period == 4:
                             play.xcoord = -play.xcoord
-                        if play.xcoord < -25.00:
+                        if play.xcoord < -25.00 and awayinclude:
                             awayTeam["zso"] += 1
                             for pid in poi:
-                                if players[pid]["position"] != "G":
+                                include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                    (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                                if players[pid]["position"] != "G" and include:
                                     if players[pid]["team"] == awayTeam["teamName"]:
                                         players[pid]["zso"] += 1
                                     else:
                                         players[pid]["zsd"] += 1
-                        elif play.xcoord > 25.00:
+                        elif play.xcoord > 25.00 and homeinclude:
                             homeTeam["zso"] += 1
                             for pid in poi:
-                                if players[pid]["position"] != "G":
+                                include = (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
+                                    (players[pid]["team"] == awayTeam["teamName"] and awayinclude)
+                                if players[pid]["position"] != "G" and include:
                                     if players[pid]["team"] == homeTeam["teamName"]:
                                         players[pid]["zso"] += 1
                                     else:
@@ -252,12 +307,17 @@ class GameDataViewSet(viewsets.ViewSet):
                     player["ff"] = player["cf"] - player["bsa"]
                     player["fa"] = player["ca"] - player["bsf"]
                     player["g+-"] = player["gf"] - player["ga"]
-                    player["sf60"] = round(player["sf"] / timeOnIceSeconds * 3600, 2)
-                    player["sa60"] = round(player["sa"] / timeOnIceSeconds * 3600, 2)
-                    player["cf60"] = round(player["cf"] / timeOnIceSeconds * 3600, 2)
-                    player["ca60"] = round(player["ca"] / timeOnIceSeconds * 3600, 2)
-                    player["ff60"] = round(player["ff"] / timeOnIceSeconds * 3600, 2)
-                    player["fa60"] = round(player["fa"] / timeOnIceSeconds * 3600, 2)
+                    try:
+                        player["sf60"] = round(player["sf"] / timeOnIceSeconds * 3600, 2)
+                        player["sa60"] = round(player["sa"] / timeOnIceSeconds * 3600, 2)
+                        player["cf60"] = round(player["cf"] / timeOnIceSeconds * 3600, 2)
+                        player["ca60"] = round(player["ca"] / timeOnIceSeconds * 3600, 2)
+                        player["ff60"] = round(player["ff"] / timeOnIceSeconds * 3600, 2)
+                        player["fa60"] = round(player["fa"] / timeOnIceSeconds * 3600, 2)
+                    except:
+                        zeroes = ["sf60", "sa60", "cf60", "ca60", "ff60", "fa60"]
+                        for z in zeroes:
+                            player[z] = 0
                 player["toi"] = self.seconds_to_hms(timeOnIceSeconds)
             homeTeam["toi"] = self.seconds_to_hms(homeTeam["toi"])
             awayTeam["toi"] = self.seconds_to_hms(awayTeam["toi"])
@@ -279,50 +339,62 @@ class GameDataViewSet(viewsets.ViewSet):
                 11: "pn-",
                 16: "a2"
             }
+            hsc = 0
+            asc = 0
             for pip in pip_data:
+                play_id = pip["play_id"]
+                homeinclude, awayinclude = self.check_play(home, away, play_id, teamStrengths, scoreSituation, hsc, asc)
+                if pip["play__playType"] == "GOAL" and pip["player_type"] == 5:
+                    if pip["play__team__teamName"] == homeTeam["teamName"]:
+                        hsc += 1
+                    else:
+                        asc += 1
                 player = players[pip["player_id"]]
                 player_type = pip["player_type"]
+
                 if player_type == 1:
-                    if player["team"] == homeTeam["teamName"]:
+                    if player["team"] == homeTeam["teamName"] and homeinclude:
                         homeTeam["fo_w"] += 1
-                    else:
+                    elif player["team"] == awayTeam["teamName"] and awayinclude:
                         awayTeam["fo_w"] += 1
                 elif player_type == 3:
-                    if player["team"] == homeTeam["teamName"]:
+                    if player["team"] == homeTeam["teamName"] and homeinclude:
                         homeTeam["hit+"] += 1
-                    else:
+                    elif player["team"] == awayTeam["teamName"] and awayinclude:
                         awayTeam["hit+"] += 1
                 elif player_type == 10:
-                    if player["team"] == homeTeam["teamName"]:
+                    if player["team"] == homeTeam["teamName"] and homeinclude:
                         homeTeam["pn"] += 1
-                    else:
+                    elif player["team"] == awayTeam["teamName"] and awayinclude:
                         awayTeam["pn"] += 1
                 if player_type in type_sum:
-                    if player_type == 5:
-                        player["icf"] += 1
-                    elif player_type == 7:
-                        sc = scs[pip["play_id"]]["sc"]
-                        if sc == 1:
-                            player["isc"] += 1
-                        elif sc == 2:
-                            player["ihsc"] += 1
-                        if pip["play__playType"] == "BLOCKED_SHOT":
-                            player["bk"] += 1
-                        elif pip["play__playType"] == "MISSED_SHOT":
-                            player["ms"] += 1
-                        elif pip["play__playType"] == "SHOT":
-                            player["sh"] += 1
-                    elif player_type == 8:
-                        if scs[pip["play_id"]]["danger"] == "LOW":
-                            player["sl"] += 1
-                            player["su"] -= 1
-                        elif scs[pip["play_id"]]["danger"] == "MEDIUM":
-                            player["sm"] += 1
-                            player["su"] -= 1
-                        elif scs[pip["play_id"]]["danger"] == "HIGH":
-                            player["sh"] += 1
-                            player["su"] -= 1
-                    player[type_sum[player_type]] += 1
+                    if (player["team"] == homeTeam["teamName"] and homeinclude) or \
+                        (player["team"] == awayTeam["teamName"] and awayinclude):
+                        if player_type == 5:
+                            player["icf"] += 1
+                        elif player_type == 7:
+                            sc = scs[pip["play_id"]]["sc"]
+                            if sc == 1:
+                                player["isc"] += 1
+                            elif sc == 2:
+                                player["ihsc"] += 1
+                            if pip["play__playType"] == "BLOCKED_SHOT":
+                                player["bk"] += 1
+                            elif pip["play__playType"] == "MISSED_SHOT":
+                                player["ms"] += 1
+                            elif pip["play__playType"] == "SHOT":
+                                player["sh"] += 1
+                        elif player_type == 8:
+                            if scs[pip["play_id"]]["danger"] == "LOW":
+                                player["sl"] += 1
+                                player["su"] -= 1
+                            elif scs[pip["play_id"]]["danger"] == "MEDIUM":
+                                player["sm"] += 1
+                                player["su"] -= 1
+                            elif scs[pip["play_id"]]["danger"] == "HIGH":
+                                player["sh"] += 1
+                                player["su"] -= 1
+                        player[type_sum[player_type]] += 1
 
             for playerid in players:
                 player = players[playerid]
@@ -339,6 +411,86 @@ class GameDataViewSet(viewsets.ViewSet):
             gameData["teamData"].append(awayTeam)
 
         return Response(gameData)
+
+    def check_play(self, home, away, play_id, teamStrengths, scoreSituation, hsc, asc):
+        hb = False
+        ab = False
+        if play_id in home:
+            hp = home[play_id]["count"]
+            ap = away[play_id]["count"]
+            hg = home[play_id]["goalie"]
+            ag = away[play_id]["goalie"]
+            if teamStrengths is None or teamStrengths == "all":
+                hb, ab = True, True
+            elif teamStrengths == "4v4" and hp == 5 and ap == 5:
+                hb, ab = True, True
+            elif teamStrengths == "even" and hp == ap and hp == 6:
+                hb, ab = True, True
+            elif teamStrengths == "pp":
+                if hp == ap + 1:
+                    hb, ab = True, False
+                elif hp + 1 == ap:
+                    hb, ab = False, True
+            elif teamStrengths == "pk":
+                if hp == ap + 1:
+                    hb, ab = False, True
+                elif hp + 1 == ap:
+                    hb, ab = True, False
+            elif teamStrengths == "3v3" and hp == 4 and ap == 4:
+                hb, ab = True, True
+            elif teamStrengths == "og":
+                if hg is True and ag is False:
+                    hb, ab = False, True
+                elif hg is False and ag is True:
+                    hb, ab = True, False
+                elif hg is True and ag is True:
+                    hb, ab = True, True
+            elif teamStrengths == "tg":
+                if hg is True and ag is False:
+                    hb, ab = True, False
+                elif hg is False and ag is True:
+                    hb, ab = False, True
+                elif hg is True and ag is True:
+                    hb, ab = True, True
+            if scoreSituation is not None and scoreSituation != "all":
+                # Only account for removing the play!
+                if scoreSituation == "t3+":
+                    if hsc <= asc + 3:
+                        hb = False
+                    if asc <= hsc + 3:
+                        ab = False
+                elif scoreSituation == "t2":
+                    if hsc != asc - 2:
+                        hb = False
+                    if asc != hsc - 2:
+                        ab = False
+                elif scoreSituation == "t1":
+                    if hsc != asc - 1:
+                        hb = False
+                    if asc != hsc - 1:
+                        ab = False
+                elif scoreSituation == "t":
+                    if hsc != asc:
+                        hb, ab = False, False
+                elif scoreSituation == "l3+":
+                    if hsc < asc + 3:
+                        hb = False
+                    if asc < hsc + 3:
+                        ab = False
+                elif scoreSituation == "l2":
+                    if hsc != asc + 2:
+                        hb = False
+                    if asc != hsc + 2:
+                        ab = False
+                elif scoreSituation == "l1":
+                    if hsc != asc + 1:
+                        hb = False
+                    if asc != hsc + 1:
+                        ab = False
+                elif scoreSituation == "w1":
+                    if hsc > asc + 1 or hsc < asc - 1:
+                        hb, ab = False, False
+        return hb, ab
 
     def calculate_rebound(self, shot, pshot):
         if pshot is not None and shot.period == pshot.period:
