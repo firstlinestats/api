@@ -719,6 +719,9 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             'game__gameState__in': [6, 7, 8],
             'game__season__in': [currentSeason, ]
         }
+        player = None
+        if "player" in getValues and len(getValues["player"]) > 0:
+            kwargs['player__id__in'] = getValues["player"]
         if "date_start" in getValues and "date_end" in getValues:
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
@@ -841,9 +844,9 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             for key in seasonStats:
                 for pid in seasonStats[key]:
                     gameStats[str(key)+"|"+str(pid)] = seasonStats[key][pid]
-        remove = ["game__season", "game__homeTeam", "player__id",
+        remove = ["game__season", "game__homeTeam",
             "team", "player__currentTeam"]
-        replace = {"player__fullName": "name",
+        replace = {"player__id" : "id", "player__fullName": "name",
             "player__primaryPositionCode": "position",
             "player__currentTeam__shortName": "currentTeam",
             "player__birthDate": "birthDate",
