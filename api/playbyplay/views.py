@@ -1121,17 +1121,17 @@ class GoalieGameStatsViewSet(viewsets.ViewSet):
                 total_saves = gameStats[t]["evenSaves"] + \
                     gameStats[t]["powerPlaySaves"] + \
                     gameStats[t]["shortHandedSaves"]
+                timeOnIceSeconds = self.calc_seconds(gameStats[t]["timeOnIce"])
+                timeOnIce = self.calc_time(timeOnIceSeconds, games)
                 gameStats[t]["sv_per"] = round(total_saves / total_shots * 100, 2)
                 gameStats[t]["adj_sv_per"] = 0
-                gameStats[t]["sa60"] = 0
+                gameStats[t]["sa60"] = round(total_shots / timeOnIceSeconds * 3600, 2)
                 gameStats[t]["sv_l"] = 0
                 gameStats[t]["sv_m"] = 0
                 gameStats[t]["sv_h"] = 0
                 gameStats[t]["g"] = total_shots - total_saves
                 gameStats[t]["s"] = total_saves
                 gameStats[t]["sh"] = total_shots
-                timeOnIceSeconds = self.calc_seconds(gameStats[t]["timeOnIce"])
-                timeOnIce = self.calc_time(timeOnIceSeconds, games)
                 gameStats[t]["TOIGm"] = timeOnIce
             else:
                 gameStats[t]["sv_per"] = 0
