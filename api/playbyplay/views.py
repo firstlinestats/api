@@ -20,6 +20,82 @@ from player.helper import getPosition
 from playbyplay.constants import gameTypes, gameStates
 
 
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class PlayerGameStatsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        currentSeason = models.Game.objects.latest("endDateTime").season
+        getValues = dict(request.GET)
+        for key in getValues:
+            val = getValues[key]
+            if len(val) == 0:
+                getValues.pop(key, None)
+        args = ()
+        kwargs = {
+            'game__gameState__in': [6, 7, 8],
+            'game__season__in': [currentSeason, ]
+        }
+        if "date_start" in getValues and "date_end" in getValues:
+            try:
+                date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
+                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
+
+                kwargs['game__dateTime__gte'] = date_start
+                kwargs['game__dateTime__lte'] = date_end
+            except:
+                date_start = None
+                date_end = None
+        bySeason = False
+        if "divide_by_season" in getValues:
+            if "on" == getValues["divide_by_season"][0]:
+                bySeason = True
+        game_types = gameTypes
+        if "game_type" in getValues and len(getValues["game_type"]) > 0:
+            game_types = getValues["game_type"]
+            kwargs['game__gameType__in'] = game_types
+        venues = None
+        if "venues" in getValues and len(getValues["venues"]) > 0:
+            venues = getValues["venues"]
+            kwargs['game__venue__name__in'] = venues
+        teams = None
+        if "teams" in getValues and len(getValues["teams"]) > 0:
+            teams = getValues["teams"]
+            args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
+        toi = None
+        if "toi" in getValues and len(getValues["toi"]) > 0:
+            try:
+                toi = int(getValues["toi"][0])
+                if toi > 60:
+                    h, m = divmod(toi, 60)
+                    kwargs['timeOnIce__gte'] = "%02d:%02d:00" % (h, m)
+                else:
+                    kwargs['timeOnIce__gte'] = "00:%02d:00" % (toi, )
+            except:
+                pass
+        seasons = currentSeason
+        if "seasons" in getValues and len(getValues["seasons"]) > 0:
+            seasons = getValues["seasons"]
+            kwargs['game__season__in'] = seasons
+        home_or_away = None
+        if "home_or_away" in getValues and len(getValues["home_or_away"]) > 0:
+            try:
+                home_or_away = int(getValues["home_or_away"][0])
+                if home_or_away == 1:
+                    home_or_away = False
+                elif home_or_away == 2:
+                    home_or_away = None
+                else:
+                    home_or_away = True
+            except:
+                pass
+        positions = None
+        if "position" in getValues and len(getValues["position"]) > 0:
+            positions = getValues["position"]
+            kwargs['player__primaryPositionCode__in'] = positions
+
+        today = datetime.date.today()
+        start = datetime.datetime.now()
+
+
 # Create your views here.
 @permission_classes((IsAuthenticatedOrReadOnly, ))
 class GameDataViewSet(viewsets.ViewSet):
@@ -705,7 +781,7 @@ class GameListViewSet(viewsets.ViewSet):
             gameList.append(g)          
         return Response(gameList)
 
-@permission_classes((IsAuthenticatedOrReadOnly, ))
+"""@permission_classes((IsAuthenticatedOrReadOnly, ))
 class PlayerGameStatsViewSet(viewsets.ViewSet):
     def list(self, request):
         currentSeason = models.Game.objects.latest("endDateTime").season
@@ -877,7 +953,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 gameStats[t]["P60"] = 0
                 gameStats[t]["TOIGm"] = 0
                 gameStats[t]["facPercent"] = 0
-        return Response(gameStats.values())
+        return Response(gameStats.values())"""
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))
 class GoalieGameStatsViewSet(viewsets.ViewSet):
