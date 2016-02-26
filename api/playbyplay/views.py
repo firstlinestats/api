@@ -45,6 +45,16 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             except:
                 date_start = None
                 date_end = None
+        if "period" in getValues:
+            try:
+                kwargs['period'] = int(getValues["period"][0])
+            except:
+                pass
+        if "strength" in getValues:
+            try:
+                kwargs['strength'] = getValues["strength"][0]
+            except Exception as e:
+                pass
         bySeason = False
         if "divide_by_season" in getValues:
             if "on" == getValues["divide_by_season"][0]:
@@ -63,7 +73,10 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
         toi = None
         if "toi" in getValues and len(getValues["toi"]) > 0:
-            toi = int(getValues["toi"][0]) * 60
+            try:
+                toi = int(getValues["toi"][0]) * 60
+            except:
+                pass
         seasons = currentSeason
         if "seasons" in getValues and len(getValues["seasons"]) > 0:
             seasons = getValues["seasons"]
@@ -80,10 +93,6 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                     home_or_away = True
             except:
                 pass
-        if "strengths" in getValues and len(getValues["strengths"]):
-            pass
-        else:
-            kwargs["strength"] = "all"
         positions = None
         if "position" in getValues and len(getValues["position"]) > 0:
             positions = getValues["position"]
