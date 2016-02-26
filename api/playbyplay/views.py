@@ -35,6 +35,9 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             'game__gameState__in': [6, 7, 8],
             'game__season__in': [currentSeason, ]
         }
+        if "player" in getValues and len(getValues["player"]) > 0:
+            player = getValues["player"]
+            kwargs['player_id__in'] = player
         if "date_start" in getValues and "date_end" in getValues:
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
@@ -90,7 +93,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             kwargs['player__primaryPositionCode__in'] = positions
 
         gameData = CompiledPlayerGameStats.objects.\
-            values("player__fullName", "gv", "offbsf", "ab",
+            values("player_id", "player__fullName", "gv", "offbsf", "ab",
                 "offmsa", "gf", "ga", "game__season",
                 "player__currentTeam__abbreviation",
                 "offbsa", "fo_l", "hscf", "onbsf", "onsf", "zsn",
