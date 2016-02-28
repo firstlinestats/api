@@ -3,7 +3,9 @@ from rest_framework import routers
 import views
 
 router = routers.DefaultRouter()
-router.register(r'teams', views.TeamViewSet)
+router.register(r'teams', views.TeamsViewSet)
+router.register(r'team', views.TeamViewSet,
+    base_name='team')
 router.register(r'venues', views.VenueViewSet)
 router.register(r'stats', views.SeasonStatsViewSet)
 router.register(r'dailystats', views.HistoricalStandingsView,

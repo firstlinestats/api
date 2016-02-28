@@ -792,17 +792,27 @@ class GameListViewSet(viewsets.ViewSet):
             'season' : currentSeason
         }
         args = ()
+        team = None
+        if "team" in getValues and len(getValues["team"]) > 0:
+            team = getValues["team"][0]
+            args = ( Q(awayTeam__abbreviation = team) | Q(homeTeam__abbreviation = team), )
+            if "teams" in getValues and len(getValues["teams"]) > 0:
+                teams = getValues["teams"]
+                args += ( Q(awayTeam__in = getValues['teams']) | Q(homeTeam__in = getValues['teams']), )
         teams = None
         if "game_state" in getValues and len(getValues["game_state"]) > 0:
             states = getValues["game_state"]
             kwargs['gameState__in'] = states
-        if "teams" in getValues and len(getValues["teams"]) > 0:
+        if "teams" in getValues and len(getValues["teams"]) > 0 and team is None:
             teams = getValues["teams"]
             args = ( Q(awayTeam__in = getValues['teams']) | Q(homeTeam__in = getValues['teams']), )
         seasons = currentSeason
+        print getValues
         if "seasons" in getValues and len(getValues["seasons"]) > 0:
             seasons = getValues["seasons"]
+            seasons = [int(x) for x in seasons]
             kwargs['season__in'] = seasons
+            kwargs.pop('season', None)
         venues = None
         if "venues" in getValues and len(getValues["venues"]) > 0:
             venues = getValues["venues"]

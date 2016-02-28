@@ -10,9 +10,11 @@ import models
 import constants
 import serializers
 
+from player.models import Player
+
 
 # Create your views here.
-class TeamViewSet(viewsets.ModelViewSet):
+class TeamsViewSet(viewsets.ModelViewSet):
     queryset = models.Team.objects.all().order_by("name")
     serializer_class = serializers.TeamSerializer
 
@@ -23,8 +25,16 @@ class VenueViewSet(viewsets.ModelViewSet):
 
 
 class SeasonStatsViewSet(viewsets.ModelViewSet):
+    print models.SeasonStats.objects.latest('date').date
     queryset = models.SeasonStats.objects.filter(date=str(models.SeasonStats.objects.latest('date').date)).order_by("-date", "-points")
     serializer_class = serializers.SeasonStatsSerializer
+
+
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class TeamViewSet(viewsets.ViewSet):
+    def list(self, request, *args, **kwargs):
+        
+        return []
 
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))

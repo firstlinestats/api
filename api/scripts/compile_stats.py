@@ -19,6 +19,17 @@ import player.models as pmodels
 import playbyplay.models as pbpmodels
 import playbyplay.helper as pbphelper
 from django.db import transaction
+import gzip
+
+from StringIO import StringIO
+
+from urllib2 import Request, urlopen, URLError
+
+headers = {
+    "User-Agent" : "Mozilla/5.0 (X11; U; Linux i686; " + \
+        "en-US; rv:1.9.2.24) Gecko/20111107 " + \
+        "Linux Mint/9 (Isadora) Firefox/3.6.24",
+}
 
 
 def get_values(ptype):
@@ -1093,5 +1104,102 @@ def main():
                 pmodels.CompiledGoalieGameStats.objects.bulk_create(gAddData)
 
 
+def update_player_stats(pd, team, game, players, period):
+    for sid in pd: # I swear that's not a Crosby reference
+        iid = int(sid.replace("ID", ""))
+        if "skaterStats" in pd[sid]["stats"]:
+            jp = pd[sid]["stats"]["skaterStats"]
+            if iid not in players:
+                player = ingest_player(jp)
+                players[player.id] = player
+            else:
+                player = players[iid]
+            try:
+                pgs, _ = pbpmodels.PlayerGameStats.objects.get_or_create(game=game,
+                    player=player, period=period)
+            except Exception as e:
+                print game.gamePk, player
+                raise e
+            pgs.timeOnIce = "00:" + jp["timeOnIce"]
+            pgs.assists = jp["assists"]
+            pgs.goals = jp["goals"]
+            pgs.shots = jp["shots"]
+            pgs.hits = jp["hits"]
+            pgs.powerPlayGoals = jp["powerPlayGoals"]
+            pgs.powerPlayAssists = jp["powerPlayAssists"]
+            pgs.penaltyMinutes = jp["penaltyMinutes"]
+            pgs.faceOffWins = jp["faceOffWins"]
+            pgs.faceoffTaken = jp["faceoffTaken"]
+            pgs.takeaways = jp["takeaways"]
+            pgs.giveaways = jp["giveaways"]
+            pgs.shortHandedGoals = jp["shortHandedGoals"]
+            pgs.shortHandedAssists = jp["shortHandedAssists"]
+            pgs.blocked = jp["blocked"]
+            pgs.plusMinus = jp["plusMinus"]
+            pgs.evenTimeOnIce = "00:" + jp["evenTimeOnIce"]
+            pgs.powerPlayTimeOnIce = "00:" + jp["powerPlayTimeOnIce"]
+            pgs.shortHandedTimeOnIce = "00:" + jp["shortHandedTimeOnIce"]
+            pgs.team = team
+            pgs.save()
+
+
+def get_game(id=None):
+    url = "http://statsapi.web.nhl.com/api/v1/game/<gamePk>/feed/live/".replace("<gamePk>", str(id))
+    return get_url(url)
+
+
+def get_url(url):
+    request = Request(url, headers=headers)
+    request.add_header('Accept-encoding', 'gzip')
+    try:
+        response = urlopen(request)
+        if response.info().get('Content-Encoding') == 'gzip':
+            buf = StringIO( response.read())
+            f = gzip.GzipFile(fileobj=buf)
+            html = f.read()
+        else:
+            html = response.read()
+    except URLError, e:
+        print e
+        return "{}"
+    return html
+
+
+def find_unknown_teams():
+    players = {}
+    tplayers = pmodels.Player.objects.all()
+    for t in tplayers:
+        players[t.id] = t
+    games = set(pbpmodels.PlayerGameStats.objects.values_list("game", flat=True).filter(team=None))
+    count = 0
+    for gameid in sorted(games):
+        with transaction.atomic():
+            game = pbpmodels.Game.objects.get(gamePk=gameid)
+            count += 1
+            if count % 100 == 0:
+                print count, len(games), game
+            allpgss = []
+            allperiods = []
+            homeMissed = 0
+            awayMissed = 0
+            count += 1
+            if count % 100 == 0:
+                print count, game.gamePk
+            j = json.loads(get_game(gameid))
+            gd = j["gameData"]
+            ld = j["liveData"]
+            boxScore = ld["boxscore"]
+            lineScore = ld["linescore"]
+            cperiod = 1
+            for period in lineScore["periods"]:
+                if period["num"] > cperiod:
+                    cperiod = period["num"]
+            hp = boxScore["teams"]["home"]["players"]
+            ap = boxScore["teams"]["away"]["players"]
+            update_player_stats(hp, game.homeTeam, game, players, cperiod)
+            update_player_stats(ap, game.awayTeam, game, players, cperiod)
+
+
 if __name__ == "__main__":
     main()
+    #find_unknown_teams()
