@@ -17,8 +17,182 @@ import models
 import helper
 import helpers
 from player.helper import getPosition
-from player.models import CompiledPlayerGameStats
+from player.models import CompiledPlayerGameStats, CompiledGoalieGameStats
 from playbyplay.constants import gameTypes, gameStates
+
+
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class GoalieGameStatsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        currentSeason = models.Game.objects.latest("endDateTime").season
+        getValues = dict(request.GET)
+        for key in getValues:
+            val = getValues[key]
+            if len(val) == 0:
+                getValues.pop(key, None)
+        args = ()
+        kwargs = {
+            'game__gameState__in': [6, 7, 8],
+            'game__season__in': [currentSeason, ]
+        }
+        if "player" in getValues and len(getValues["player"]) > 0:
+            player = getValues["player"]
+            kwargs['player_id__in'] = player
+        if "date_start" in getValues and "date_end" in getValues:
+            try:
+                date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
+                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
+
+                kwargs['game__dateTime__gte'] = date_start
+                kwargs['game__dateTime__lte'] = date_end
+            except:
+                date_start = None
+                date_end = None
+        if "period" in getValues:
+            try:
+                kwargs['period'] = int(getValues["period"][0])
+            except:
+                pass
+        if "strength" in getValues:
+            try:
+                kwargs['strength'] = getValues["strength"][0]
+            except Exception as e:
+                pass
+        bySeason = False
+        if "divide_by_season" in getValues:
+            if "on" == getValues["divide_by_season"][0]:
+                bySeason = True
+        game_types = gameTypes
+        if "game_type" in getValues and len(getValues["game_type"]) > 0:
+            game_types = getValues["game_type"]
+            kwargs['game__gameType__in'] = game_types
+        venues = None
+        if "venues" in getValues and len(getValues["venues"]) > 0:
+            venues = getValues["venues"]
+            kwargs['game__venue__name__in'] = venues
+        teams = None
+        if "teams" in getValues and len(getValues["teams"]) > 0:
+            teams = getValues["teams"]
+            args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
+        toi = None
+        if "toi" in getValues and len(getValues["toi"]) > 0:
+            try:
+                toi = int(getValues["toi"][0]) * 60
+            except:
+                pass
+        seasons = currentSeason
+        if "seasons" in getValues and len(getValues["seasons"]) > 0:
+            seasons = getValues["seasons"]
+            kwargs['game__season__in'] = seasons
+        home_or_away = None
+        if "home_or_away" in getValues and len(getValues["home_or_away"]) > 0:
+            try:
+                home_or_away = int(getValues["home_or_away"][0])
+                if home_or_away == 1:
+                    home_or_away = False
+                elif home_or_away == 2:
+                    home_or_away = None
+                else:
+                    home_or_away = True
+            except:
+                pass
+
+        gameData = CompiledGoalieGameStats.objects.\
+            values("player_id", "player__fullName", "game__season",
+                "player__currentTeam__abbreviation", "game_id",
+                "player__height", "player__weight", "player__birthDate", 
+                "player__primaryPositionCode", "shotsLow",
+                "savesLow", "shotsMedium", "savesMedium", "shotsHigh",
+                "savesHigh", "toi").filter(*args, **kwargs)
+
+
+        if "player" in getValues and len(getValues["player"]) > 0:  
+            shotsKwargs = kwargs
+            del shotsKwargs['player_id__in']  
+            leaugeShots = CompiledGoalieGameStats.objects.\
+                values("shotsLow", "savesLow", "shotsMedium", 
+                    "savesMedium", "shotsHigh", "savesHigh", "toi").\
+                filter(*args, **shotsKwargs)
+        else:
+            leaugeShots = CompiledGoalieGameStats.objects.\
+                values("shotsLow", "savesLow", "shotsMedium", 
+                    "savesMedium", "shotsHigh", "savesHigh").\
+                filter(*args, **kwargs)
+
+
+        players = {}
+        compiled = []
+        playergames = {}
+
+        leaugeShotsLow = 0
+        leaugeShotsMedium = 0
+        leaugeShotsHigh = 0
+
+        for data in leaugeShots:
+            leaugeShotsLow += data['shotsLow']
+            leaugeShotsMedium += data['shotsMedium']
+            leaugeShotsHigh += data['shotsHigh']
+
+       
+
+        for data in gameData:
+            data["leaugeShotsLow"] = leaugeShotsLow
+            data["leaugeShotsMedium"] = leaugeShotsMedium
+            data["leaugeShotsHigh"] = leaugeShotsHigh
+
+            pname = data["player__fullName"]
+            if pname not in players:
+                player = setup_goalie(data)
+                playergames[pname] = set()
+                playergames[pname].add(data["game_id"])
+                players[player["name"]] = player
+            else:
+                add_goalie(players[pname], data, playergames)
+        if toi is not None:
+            playerstoi = []
+            for player in players:
+                if players[player]["toi"] / players[player]["games"] >= toi:
+                    playerstoi.append(players[player])
+            return Response(playerstoi)
+        print players
+        return Response(players.values())
+
+
+def add_goalie(existing, newdata, playergames):
+    exclude = ["game", "player", "period", "strength",
+        "player_id", "game_id", "_state", "toi", "timeOffIce",
+        "player__currentTeam__abbreviation", "player__fullName",
+        "game__season", "player__height", "player__weight",
+        "player__birthDate", "player__primaryPositionCode"]
+    for key in newdata:
+        if key not in exclude:
+            existing[key] += newdata[key]
+    existing["toi"] += newdata["toi"].minute * 60 + newdata["toi"].second
+    if newdata["game_id"] not in playergames[existing["name"]]:
+        existing["games"] += 1
+        playergames[existing["name"]].add(newdata["game_id"])
+
+
+def setup_goalie(data):
+    pdict = {"name": data["player__fullName"],
+        "season": data["game__season"],
+        "team": data["player__currentTeam__abbreviation"]}
+    exclude = ["toi", "timeOffIce", "player__fullName",
+        "player__currentTeam__abbreviation", "game__season",
+        "player__birthDate", "player__primaryPositionCode"]
+    for key in data:
+        if key not in exclude:
+            pdict[key] = data[key]
+    pdict["games"] = 1
+    if len(pdict["player__height"]) == 5:
+        pdict["player__height"] = pdict["player__height"][:3] + "0" + pdict["player__height"][3:]
+    pdict["currentTeamAbbr"] = pdict["team"]
+    pdict["position"] = getPosition(data["player__primaryPositionCode"])
+    pdict["age"] = helpers.calculate_age(data["player__birthDate"])
+    pdict["toi"] = data["toi"].minute * 60 + data["toi"].second
+    return pdict
+
+
 
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))
@@ -859,204 +1033,3 @@ class GameListViewSet(viewsets.ViewSet):
             gameList.append(g)          
         return Response(gameList)
 
-
-@permission_classes((IsAuthenticatedOrReadOnly, ))
-class GoalieGameStatsViewSet(viewsets.ViewSet):
-    def list(self, request):
-        currentSeason = models.Game.objects.latest("endDateTime").season
-        getValues = dict(request.GET)
-        for key in getValues:
-            val = getValues[key]
-            if len(val) == 0:
-                getValues.pop(key, None)
-        args = ()
-        kwargs = {
-            'game__gameState__in': [6, 7, 8],
-            'game__season__in': [currentSeason, ]
-        }
-        if "date_start" in getValues and "date_end" in getValues:
-            try:
-                date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
-                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
-
-                kwargs['game__dateTime__gte'] = date_start
-                kwargs['game__dateTime__lte'] = date_end
-            except:
-                date_start = None
-                date_end = None
-        bySeason = False
-        if "divide_by_season" in getValues:
-            if "on" == getValues["divide_by_season"][0]:
-                bySeason = True
-        game_types = gameTypes
-        if "game_type" in getValues and len(getValues["game_type"]) > 0:
-            game_types = getValues["game_type"]
-            kwargs['game__gameType__in'] = game_types
-        venues = None
-        if "venues" in getValues and len(getValues["venues"]) > 0:
-            venues = getValues["venues"]
-            kwargs['game__venue__name__in'] = venues
-        teams = None
-        if "teams" in getValues and len(getValues["teams"]) > 0:
-            teams = getValues["teams"]
-            args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
-        toi = None
-        if "toi" in getValues and len(getValues["toi"]) > 0:
-            try:
-                toi = int(getValues["toi"][0])
-                if toi > 60:
-                    h, m = divmod(toi, 60)
-                    kwargs['timeOnIce__gte'] = "%02d:%02d:00" % (h, m)
-                else:
-                    kwargs['timeOnIce__gte'] = "00:%02d:00" % (toi, )
-            except:
-                pass
-        seasons = currentSeason
-        if "seasons" in getValues and len(getValues["seasons"]) > 0:
-            seasons = getValues["seasons"]
-            kwargs['game__season__in'] = seasons
-        home_or_away = None
-        if "home_or_away" in getValues and len(getValues["home_or_away"]) > 0:
-            try:
-                home_or_away = int(getValues["home_or_away"][0])
-                if home_or_away == 1:
-                    home_or_away = False
-                elif home_or_away == 2:
-                    home_or_away = None
-                else:
-                    home_or_away = True
-            except:
-                pass
-        positions = None
-        if "position" in getValues and len(getValues["position"]) > 0:
-            positions = getValues["position"]
-            kwargs['player__primaryPositionCode__in'] = positions
-
-        today = datetime.date.today()
-        start = datetime.datetime.now()
-        tgameStats = models.GoalieGameStats.objects\
-            .values("player__fullName", "player__currentTeam__shortName",
-                "player__currentTeam", "player__birthDate",
-                "player__weight", "player__height",
-                "player__currentTeam__abbreviation",
-                "player__id", "timeOnIce", "team",
-                "game__homeTeam", "game__season",
-                "saves", "powerPlaySaves", "shortHandedSaves",
-                "evenSaves", "shortHandedShotsAgainst",
-                "evenShotsAgainst", "powerPlayShotsAgainst",
-                "decision")\
-            .filter(*args, **kwargs).iterator()
-        if bySeason is False:
-            gameStats = {}
-        else:
-            seasonStats = {}
-        pid = "player__id"
-        exclude = [pid, "player__birthDate",
-            "player__fullName", "player__currentTeam", "team",
-            "player__currentTeam__abbreviation", "player__id",
-            "player__currentTeam__shortName", "player__height",
-            "player__weight", "game__season", "game__homeTeam",
-            "decision"]
-
-        for t in tgameStats:
-            counts = True
-            if home_or_away is not None:
-                counts = False
-                if home_or_away is True and t["team"] == t["game__homeTeam"]:
-                    counts = True
-                elif home_or_away is False and t["team"] != t["game__homeTeam"]:
-                    counts = True
-            if counts is True:
-                if bySeason is True:
-                    if t["game__season"] not in seasonStats:
-                        seasonStats[t["game__season"]] = {}
-                    gameStats = seasonStats[t["game__season"]]
-                if t[pid] not in gameStats:
-                    gameStats[t[pid]] = t
-                    gameStats[t[pid]]["games"] = 1
-                    gameStats[t[pid]]["age"] = helpers.calculate_age(t["player__birthDate"], today=today)
-                    d1 = gameStats[t[pid]]["timeOnIce"]
-                    gameStats[t[pid]]["timeOnIce"] = datetime.timedelta(hours=d1.hour, minutes=d1.minute, seconds=d1.second)
-                else:
-                    gameStats[t[pid]]["games"] += 1
-                    for key in t:
-                        if key not in exclude:
-                            if isinstance(gameStats[t[pid]][key], datetime.time):
-                                gameStats[t[pid]][key] = helpers.combine_time(gameStats[t[pid]][key], t[key])
-                            elif isinstance(gameStats[t[pid]][key], datetime.timedelta):
-                                gameStats[t[pid]][key] += datetime.timedelta(hours=t[key].hour, minutes=t[key].minute, seconds=t[key].second)
-                            else:
-                                if gameStats[t[pid]][key] is not None:
-                                    gameStats[t[pid]][key] += t[key]
-                                else:
-                                    gameStats[t[pid]][key] = t[key]
-        if bySeason is True:
-            gameStats = {}
-            for key in seasonStats:
-                for pid in seasonStats[key]:
-                    gameStats[str(key)+"|"+str(pid)] = seasonStats[key][pid]
-        remove = ["game__season", "game__homeTeam", "player__id",
-            "team", "player__currentTeam"]
-        replace = {"player__fullName": "name",
-            "player__currentTeam__shortName": "currentTeam",
-            "player__birthDate": "birthDate",
-            "player__currentTeam__abbreviation": "currentTeamAbbr",
-            "player__height": "height", "player__weight": "weight"}
-        for t in gameStats:
-            games = gameStats[t]["games"]
-            pdict = gameStats[t]
-            for r in remove:
-                pdict.pop(r, None)
-            for r in replace:
-                pdict[replace[r]] = pdict[r]
-                pdict.pop(r, None)
-            if len(gameStats[t]["height"]) == 5:
-                gameStats[t]["height"] = gameStats[t]["height"][:3] + "0" + gameStats[t]["height"][3:]
-            if isinstance(t, str) and "|" in t:
-                gameStats[t]["season"] = t.split("|")[0]
-            else:
-                if isinstance(seasons, list):
-                    gameStats[t]["season"] = seasons[0]
-                else:
-                    gameStats[t]["season"] = seasons
-            if games != 0:
-                total_shots = gameStats[t]["evenShotsAgainst"] + \
-                    gameStats[t]["powerPlayShotsAgainst"] + \
-                    gameStats[t]["shortHandedShotsAgainst"]
-                total_saves = gameStats[t]["evenSaves"] + \
-                    gameStats[t]["powerPlaySaves"] + \
-                    gameStats[t]["shortHandedSaves"]
-                timeOnIceSeconds = self.calc_seconds(gameStats[t]["timeOnIce"])
-                timeOnIce = self.calc_time(timeOnIceSeconds, games)
-                gameStats[t]["sv_per"] = round(total_saves / total_shots * 100, 2)
-                gameStats[t]["adj_sv_per"] = 0
-                gameStats[t]["sa60"] = round(total_shots / timeOnIceSeconds * 3600, 2)
-                gameStats[t]["sv_l"] = 0
-                gameStats[t]["sv_m"] = 0
-                gameStats[t]["sv_h"] = 0
-                gameStats[t]["g"] = total_shots - total_saves
-                gameStats[t]["s"] = total_saves
-                gameStats[t]["sh"] = total_shots
-                gameStats[t]["TOIGm"] = timeOnIce
-            else:
-                gameStats[t]["sv_per"] = 0
-                gameStats[t]["adj_sv_per"] = 0
-                gameStats[t]["sa60"] = 0
-                gameStats[t]["sv_l"] = 0
-                gameStats[t]["sv_m"] = 0
-                gameStats[t]["sv_h"] = 0
-                gameStats[t]["g"] = 0
-                gameStats[t]["s"] = 0
-                gameStats[t]["sh"] = 0
-                gameStats[t]["TOIGm"] = "00:00"
-        return Response(gameStats.values())
-
-    def calc_seconds(self, value):
-        seconds = value.total_seconds()
-        return seconds
-
-    def calc_time(self, total_seconds, games):
-        print total_seconds, games
-        m, s = divmod(total_seconds / games, 60)
-        h, m = divmod(m, 60)
-        return "%02d:%02d:%02d" % (h, m, s)
