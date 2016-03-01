@@ -17,7 +17,6 @@ from models import CompiledPlayerGameStats, Player
 class PlayerGameStatsViewSet(viewsets.ViewSet):
     def list(self, request):
         ip = get_client_ip(request)
-        print ip
         currentSeason = models.Game.objects.values_list("season").latest("endDateTime")[0]
         getValues = dict(request.GET)
         for key in getValues:
@@ -29,9 +28,17 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             'game__gameState__in': [6, 7, 8],
             'game__season__in': [currentSeason, ]
         }
+        playerArgs = ()
+        playerKwargs = {}
+        gameArgs = ()
+        gameKwargs = {
+            'game__gameState__in': [6, 7, 8],
+            'game__season__in': [currentSeason]
+        }
         if "player" in getValues and len(getValues["player"]) > 0:
             player = getValues["player"]
             kwargs['player_id__in'] = player
+            playerKwargs['player_id__in'] = player
         if "date_start" in getValues and "date_end" in getValues:
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
@@ -47,6 +54,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 kwargs['period'] = int(getValues["period"][0])
             except:
                 pass
+        kwargs['strength'] = "all"
         if "strength" in getValues:
             try:
                 kwargs['strength'] = getValues["strength"][0]
@@ -95,10 +103,23 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             positions = getValues["position"]
             kwargs['player__primaryPositionCode__in'] = positions
 
+        # Get players
+        playersdata = Player.objects.values("currentTeam__abbreviation",
+            "id", "fullName", "height", "weight", "birthDate", "primaryPositionCode")\
+            .filter(*playerArgs, **playerKwargs).exclude(primaryPositionCode="G")
+        players = {}
+        for player in playersdata:
+            pname = player["fullName"]
+            if pname not in players:
+                player = setup_skater(player)
+                players[player["id"]] = player
+        # Get games
+
+        # Get stats
+
         gameData = CompiledPlayerGameStats.objects.\
-            values("player_id", "player__fullName", "gv", "offbsf", "ab",
+            values("player_id", "gv", "offbsf", "ab",
                 "offmsa", "gf", "ga", "game__season",
-                "player__currentTeam__abbreviation",
                 "offbsa", "fo_l", "hscf", "onbsf", "onsf", "zsn",
                 "timeOffIce", "toi", "tk", "msf", "pn", "msa",
                 "hit", "assists2", "sca", "sc", "offga",
@@ -106,21 +127,17 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 "hitt", "hsca", "offmsf", "fo_w", "sf", "zsd",
                 "offsf", "offsa", "isc", "ihsc", "sa", "zso",
                 "pnDrawn", "goals", "game_id",
-                "player__height", "player__weight",
-                "player__birthDate", "player__primaryPositionCode"
                 ).filter(*args, **kwargs)
-        players = {}
+
         compiled = []
         playergames = {}
         for data in gameData:
-            pname = data["player__fullName"]
-            if pname not in players:
-                player = setup_skater(data)
-                playergames[pname] = set()
-                playergames[pname].add(data["game_id"])
-                players[player["name"]] = player
+            pid = data["player_id"]
+            if pid not in playergames:
+                playergames[pid] = set()
+                playergames[pid].add(data["game_id"])
             else:
-                add_player(players[pname], data, playergames)
+                add_player(players[pid], data, playergames)
         if toi is not None:
             playerstoi = []
             for player in players:
