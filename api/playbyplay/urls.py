@@ -4,8 +4,6 @@ import views
 
 router = routers.DefaultRouter()
 router.register(r'recent', views.RecentGameViewSet)
-router.register(r'playerstats', views.PlayerGameStatsViewSet,
-    base_name="PlayerStats")
 router.register(r'goaliestats', views.GoalieGameStatsViewSet,
     base_name="GoalieStats")
 router.register(r'game', views.GameDataViewSet,

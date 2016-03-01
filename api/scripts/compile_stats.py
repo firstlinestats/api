@@ -53,7 +53,7 @@ def get_values(ptype):
 
 
 def setup_player_dict(player_id, gamePk, ptype):
-    values = {1: {}, 2: {}, 3: {}, 4: {}, 5: {}}
+    values = {1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}}
     for period in values:
         strengths = {"all": {}, "even": {}, "pp": {}, "3v3": {},
             "pk": {}, "4v4": {}, "og": {}, "tg": {}, "oth": {}}
@@ -284,42 +284,43 @@ def handle_goal(pbp, gameDict, inplay, onice, homeStrength, awayStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 5:
-            # Find goalie who was scored on
-            for g in onice:
-                if g in gameDict["goalies"] and players[g] != team:
-                    gstrength = find_players_team_strength(players[g],
-                        homeTeam, awayTeam, homeStrength, awayStrength)
-                    for s in gstrength:
-                        shotType = "shots" + zone
-                        data = gameDict["goalies"][g][period][s]
-                        data[shotType] += 1
-            # Add stats for shooter
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    gf = team
-                    data["goals"] += 1
-                    data["sf"] += 1
-                    if sc == 2:
-                        data["ihsc"] += 1
-                    elif sc == 1:
-                        data["isc"] += 1
-        elif ptype == 6:
-            # Add stats for primary assist
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    data["assists"] += 1
-        elif ptype == 16:
-            # Add stats for secondary assist
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    data["assists2"] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 5:
+                # Find goalie who was scored on
+                for g in onice:
+                    if g in gameDict["goalies"] and players[g] != team:
+                        gstrength = find_players_team_strength(players[g],
+                            homeTeam, awayTeam, homeStrength, awayStrength)
+                        for s in gstrength:
+                            shotType = "shots" + zone
+                            data = gameDict["goalies"][g][period][s]
+                            data[shotType] += 1
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["goals"] += 1
+                        data["sf"] += 1
+                        if sc == 2:
+                            data["ihsc"] += 1
+                        elif sc == 1:
+                            data["isc"] += 1
+            elif ptype == 6:
+                # Add stats for primary assist
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        data["assists"] += 1
+            elif ptype == 16:
+                # Add stats for secondary assist
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        data["assists2"] += 1
     # Get values for those on the ice
     if previous_play is not None:
         seconds = diff_times_in_seconds(pbp.periodTime, previous_play.periodTime)
@@ -385,27 +386,30 @@ def handle_shot(pbp, gameDict, inplay, onice, homeStrength, awayStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 7:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["sf"] += 1
-                if sc == 2:
-                    data["ihsc"] += 1
-                elif sc == 1:
-                    data["isc"] += 1
-        elif ptype == 8:
-            # Add stats for goalie
-            shotType = "shots" + zone
-            saveType = "saves" + zone
-            for s in strength:
-                data = gameDict["goalies"][pid][period][s]
-                data[shotType] += 1
-                data[saveType] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 7:
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    pdata = gameDict["skaters"][pid][period]
+                    for s in strength:
+                        data = pdata[s]
+                        gf = team
+                        data["sf"] += 1
+                        if sc == 2:
+                            data["ihsc"] += 1
+                        elif sc == 1:
+                            data["isc"] += 1
+            elif ptype == 8:
+                # Add stats for goalie
+                shotType = "shots" + zone
+                saveType = "saves" + zone
+                for s in strength:
+                    data = gameDict["goalies"][pid][period][s]
+                    data[shotType] += 1
+                    data[saveType] += 1
 
 
     # Get values for those on the ice
@@ -470,28 +474,27 @@ def handle_blocked_shot(pbp, gameDict, inplay, onice, homeStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 7:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["bsf"] += 1
-                if sc == 2:
-                    data["ihsc"] += 1
-                elif sc == 1:
-                    data["isc"] += 1
-        elif ptype == 9:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["ab"] += 1
-
-
-
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 7 and pid in gameDict["skaters"]:
+                # Add stats for shooter
+                for s in strength:
+                    data = gameDict["skaters"][pid][period][s]
+                    gf = team
+                    data["bsf"] += 1
+                    if sc == 2:
+                        data["ihsc"] += 1
+                    elif sc == 1:
+                        data["isc"] += 1
+            elif ptype == 9:
+                # Add stats for shooter
+                for s in strength:
+                    if pid in gameDict["skaters"]:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["ab"] += 1
     # Get values for those on the ice
     if previous_play is not None:
         seconds = diff_times_in_seconds(pbp.periodTime, previous_play.periodTime)
@@ -558,7 +561,7 @@ def handle_missed_shot(pbp, gameDict, inplay, onice, homeStrength,
             team = players[pid]
             strength = find_players_team_strength(players[pid], homeTeam,
                 awayTeam, homeStrength, awayStrength)
-            if ptype == 7:
+            if ptype == 7 and pid in gameDict["skaters"]:
                 # Add stats for shooter
                 for s in strength:
                     data = gameDict["skaters"][pid][period][s]
@@ -631,6 +634,9 @@ def handle_penalty(pbp, gameDict, inplay, onice, homeStrength,
     # Get values for those involved in play
     for p in inplay:
         pid = p["player_id"]
+        # handle weird instance where player serves penalty despite not playing in the game
+        if pid not in players:
+            continue
         ptype = p["player_type"]
         team = players[pid]
         strength = find_players_team_strength(players[pid], homeTeam,
@@ -688,16 +694,17 @@ def handle_takeaway(pbp, gameDict, inplay, onice, homeStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 13:
-            # Add stats for shooter
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    gf = team
-                    data["tk"] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 13:
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["tk"] += 1
 
     # Get values for those on the ice
     if previous_play is not None:
@@ -858,6 +865,8 @@ def handle_faceoff(pbp, gameDict, inplay, onice, homeStrength,
     for player in players:
         if player in gameDict["skaters"] and player not in exclude:
             data = gameDict["skaters"][player][period]
+            strength = find_players_team_strength(players[player], homeTeam,
+                awayTeam, homeStrength, awayStrength)
             for s in strength:
                 data[s]["timeOffIce"] += seconds
 
