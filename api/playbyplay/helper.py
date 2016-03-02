@@ -43,3 +43,17 @@ def init_team():
     for n in strkeys:
         team[n] = ""
     return team
+
+
+def calc_sa(sas, seconds):
+    sas.append({"seconds": seconds, "value": len(sas) + 1})
+
+
+def findPPGoal(eventcount, teampp, teamgoal):
+    for pp in eventcount[teampp]:
+        start = pp["seconds"]
+        end = pp["seconds"] + pp["length"]
+        for goal in eventcount[teamgoal]:
+            if goal["seconds"] > start and goal["seconds"] < end:
+                pp["length"] = goal["seconds"] - start
+    return eventcount

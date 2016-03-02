@@ -1,4 +1,6 @@
+from django.db.models import Q
 from django.shortcuts import render
+from django.db.models import Count
 
 from rest_framework import viewsets
 from rest_framework.response import Response
@@ -25,15 +27,15 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 getValues.pop(key, None)
         args = ()
         kwargs = {
-            'game__gameState__in': [6, 7, 8],
+            'game__gameState': 7,
             'game__season__in': [currentSeason, ]
         }
         playerArgs = ()
         playerKwargs = {}
         gameArgs = ()
         gameKwargs = {
-            'game__gameState__in': [6, 7, 8],
-            'game__season__in': [currentSeason]
+            'game__gameState': 7,
+            'game__season': currentSeason
         }
         if "player" in getValues and len(getValues["player"]) > 0:
             player = getValues["player"]
@@ -54,10 +56,10 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 kwargs['period'] = int(getValues["period"][0])
             except:
                 pass
-        kwargs['strength'] = "all"
+        args = (Q(strength = "all"), )
         if "strength" in getValues:
             try:
-                kwargs['strength'] = getValues["strength"][0]
+                args = (Q(strength=getValues["strength"][0]), )
             except Exception as e:
                 pass
         bySeason = False
@@ -75,7 +77,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
         teams = None
         if "teams" in getValues and len(getValues["teams"]) > 0:
             teams = getValues["teams"]
-            args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
+            args = args & ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
         toi = None
         if "toi" in getValues and len(getValues["toi"]) > 0:
             try:
@@ -86,6 +88,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
         if "seasons" in getValues and len(getValues["seasons"]) > 0:
             seasons = getValues["seasons"]
             kwargs['game__season__in'] = seasons
+            kwargs.pop("game__season", None)
         home_or_away = None
         if "home_or_away" in getValues and len(getValues["home_or_away"]) > 0:
             try:
@@ -103,23 +106,24 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             positions = getValues["position"]
             kwargs['player__primaryPositionCode__in'] = positions
 
+        games = models.Game.objects.values("gamePk", "season").all()
+        gameDict = {}
+        for game in games:
+            gameDict[game["gamePk"]] = game["season"]
+
         # Get players
         playersdata = Player.objects.values("currentTeam__abbreviation",
             "id", "fullName", "height", "weight", "birthDate", "primaryPositionCode")\
             .filter(*playerArgs, **playerKwargs).exclude(primaryPositionCode="G")
         players = {}
-        for player in playersdata:
-            pname = player["fullName"]
-            if pname not in players:
-                player = setup_skater(player)
-                players[player["id"]] = player
-        # Get games
 
         # Get stats
-
+        for player in playersdata:
+            player = setup_skater(player)
+            players[player["id"]] = player
         gameData = CompiledPlayerGameStats.objects.\
             values("player_id", "gv", "offbsf", "ab",
-                "offmsa", "gf", "ga", "game__season",
+                "offmsa", "gf", "ga",
                 "offbsa", "fo_l", "hscf", "onbsf", "onsf", "zsn",
                 "timeOffIce", "toi", "tk", "msf", "pn", "msa",
                 "hit", "assists2", "sca", "sc", "offga",
@@ -127,7 +131,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 "hitt", "hsca", "offmsf", "fo_w", "sf", "zsd",
                 "offsf", "offsa", "isc", "ihsc", "sa", "zso",
                 "pnDrawn", "goals", "game_id",
-                ).filter(*args, **kwargs)
+                ).filter(*args, **kwargs).prefetch_related("game__season").iterator()
 
         compiled = []
         playergames = {}
@@ -137,7 +141,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 playergames[pid] = set()
                 playergames[pid].add(data["game_id"])
             else:
-                add_player(players[pid], data, playergames)
+                add_player(players[pid], data, playergames, gameDict)
         if toi is not None:
             playerstoi = []
             for player in players:

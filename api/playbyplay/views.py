@@ -234,6 +234,13 @@ class GameDataViewSet(viewsets.ViewSet):
         details["venue"] = str(game.venue)
         details["date"] = game.dateTime.astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %I:%M %p EST")
         gameData["details"] = details
+        gameData["eventcount"] = {"homepp": [], "awaypp": [], "4v4": [],
+            "homegoal": [], "awaygoal": [], "emptynet": [],
+            "homesc": [{"seconds": 0, "value": 0}],
+            "awaysc": [{"seconds": 0, "value": 0}],
+            "homesa": [{"seconds": 0, "value": 0}],
+            "awaysa": [{"seconds": 0, "value": 0}],
+            "pend": []}
 
         if game.gameState in ['3', '4', '5', '6', '7']:
             pbp = models.PlayByPlay.objects.filter(*args, **kwargs).order_by("period", "periodTime")
@@ -308,6 +315,9 @@ class GameDataViewSet(viewsets.ViewSet):
             count = 0
             hsc = 0
             asc = 0
+            lp = None
+            lpl = None
+            lpt = None
             for play in pbp:
                 add_play = False
                 if previous_play is not None and previous_period == play.period:
@@ -316,13 +326,40 @@ class GameDataViewSet(viewsets.ViewSet):
                 elif previous_period != play.period:
                     previous_period = play.period
                 previous_play = play.periodTime
+                seconds = 20 * 60 * (previous_period - 1) + play.periodTime.hour * 60 + play.periodTime.minute
                 play_id = play.id
                 homeinclude, awayinclude = self.check_play(home, away, play_id, teamStrengths, scoreSituation, hsc, asc)
                 if play.playType == "GOAL":
                     if play.team.teamName == homeTeam["teamName"]:
+                        if lp is not None:
+                            if seconds - lp < lpl and lpt == homeTeam["teamName"]:
+                                gameData["eventcount"]["homepp"][-1]["length"] = seconds - lp
+                        lp = None
+                        helper.calc_sa(gameData["eventcount"]["homegoal"], seconds)
                         hsc += 1
                     else:
+                        if lp is not None:
+                            if seconds - lp < lpl and lpt == awayTeam["teamName"]:
+                                gameData["eventcount"]["awaypp"][-1]["length"] = seconds - lp
+                        lp = None
+                        helper.calc_sa(gameData["eventcount"]["awaygoal"], seconds)
                         asc += 1
+                elif play.playType == "PENALTY" and play.penaltySeverity == "Minor":
+                    if play.team.teamName == homeTeam["teamName"]:
+                        gameData["eventcount"]["awaypp"].append({"seconds": seconds,
+                            "length": play.penaltyMinutes * 60})
+                        lp = seconds
+                        lpl = play.penaltyMinutes * 60
+                        lpt = homeTeam["teamName"]
+                    else:
+                        gameData["eventcount"]["homepp"].append({"seconds": seconds,
+                            "length": play.penaltyMinutes * 60})
+                        lp = seconds
+                        lpl = play.penaltyMinutes * 60
+                        lpt = awayTeam["teamName"]
+                elif play.playType == "PERIOD_END":
+                    gameData["eventcount"]["pend"].append(seconds)
+
                 if play.team is not None:
                     team = play.team.teamName
                 if play_id in onice:
@@ -352,14 +389,20 @@ class GameDataViewSet(viewsets.ViewSet):
                                 else:
                                     player["sca"] += 1
                         if team == homeTeam["teamName"]:
+                            helper.calc_sa(gameData["eventcount"]["homesa"], seconds)
                             if sc == 1 and homeinclude:
+                                helper.calc_sa(gameData["eventcount"]["homesc"], seconds)
                                 homeTeam["scf"] += 1
                             elif sc == 2 and homeinclude:
+                                helper.calc_sa(gameData["eventcount"]["homesc"], seconds)
                                 homeTeam["hscf"] += 1
                         else:
+                            helper.calc_sa(gameData["eventcount"]["awaysa"], seconds)
                             if sc == 1 and awayinclude:
+                                helper.calc_sa(gameData["eventcount"]["awaysc"], seconds)
                                 awayTeam["scf"] += 1
                             elif sc == 2 and awayinclude:
+                                helper.calc_sa(gameData["eventcount"]["awaysc"], seconds)
                                 awayTeam["hscf"] += 1
                         if team == homeTeam["teamName"] and homeinclude:
                             xcoord = play.xcoord
@@ -581,7 +624,8 @@ class GameDataViewSet(viewsets.ViewSet):
                             elif scs[pip["play_id"]]["danger"] == "HIGH":
                                 player["sh"] += 1
                                 player["su"] -= 1
-                        player[type_sum[player_type]] += 1
+                        if type_sum[player_type] in player:
+                            player[type_sum[player_type]] += 1
 
             for playerid in players:
                 player = players[playerid]
@@ -596,6 +640,29 @@ class GameDataViewSet(viewsets.ViewSet):
 
             gameData["teamData"].append(homeTeam)
             gameData["teamData"].append(awayTeam)
+
+            homelast = gameData["eventcount"]["homesa"][-1]["seconds"]
+            awaylast = gameData["eventcount"]["awaysa"][-1]["seconds"]
+
+            if homelast < awaylast:
+                gameData["eventcount"]["homesa"].append({"seconds": awaylast, "value": gameData["eventcount"]["homesa"][-1]["value"]})
+            elif homelast > awaylast:
+                gameData["eventcount"]["awaysa"].append({"seconds": homelast, "value": gameData["eventcount"]["awaysa"][-1]["value"]})
+
+            helper.findPPGoal(gameData["eventcount"], "homepp", "homegoal")
+            helper.findPPGoal(gameData["eventcount"], "awaypp", "awaygoal")
+            homelast = gameData["eventcount"]["homesc"][-1]["seconds"]
+            awaylast = gameData["eventcount"]["awaysc"][-1]["seconds"]
+            if homelast < awaylast:
+                final = awaylast
+                gameData["eventcount"]["homesc"].append({"seconds": awaylast, "value": gameData["eventcount"]["homesc"][-1]["value"]})
+            elif homelast > awaylast:
+                final = homelast
+                gameData["eventcount"]["awaysc"].append({"seconds": homelast, "value": gameData["eventcount"]["awaysc"][-1]["value"]})
+            if gameData["eventcount"]["homepp"][-1]["seconds"] + gameData["eventcount"]["homepp"][-1]["length"] > final:
+                gameData["eventcount"]["homepp"][-1]["length"] = final - gameData["eventcount"]["homepp"][-1]["seconds"]
+            if gameData["eventcount"]["awaypp"][-1]["seconds"] + gameData["eventcount"]["awaypp"][-1]["length"] > final:
+                gameData["eventcount"]["awaypp"][-1]["length"] = final - gameData["eventcount"]["awaypp"][-1]["seconds"]
 
         return Response(gameData)
 

@@ -95,7 +95,7 @@ DATABASES = {
         'PASSWORD': cred.PASSWORD,
         'HOST': cred.HOST,
         'PORT': cred.PORT,
-    }
+    },
 }
 
 
