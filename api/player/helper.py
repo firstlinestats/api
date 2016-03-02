@@ -9,12 +9,14 @@ def getPosition(code):
     return code
 
 
-def add_player(existing, newdata, playergames):
+def add_player(existing, newdata, playergames, gameDict):
     exclude = ["game", "player", "period", "strength",
         "player_id", "game_id", "_state", "toi", "timeOffIce",
         "player__currentTeam__abbreviation", "player__fullName",
-        "game__season", "player__height", "player__weight",
+        "season", "player__height", "player__weight",
         "player__birthDate", "player__primaryPositionCode"]
+    if "season" not in existing:
+        existing["season"] = gameDict[newdata["game_id"]]
     for key in newdata:
         if key not in exclude:
             if key not in existing:
@@ -22,7 +24,7 @@ def add_player(existing, newdata, playergames):
             existing[key] += newdata[key]
     existing["toi"] += newdata["toi"].minute * 60 + newdata["toi"].second
     existing["timeOffIce"] += newdata["timeOffIce"].minute * 60 + newdata["timeOffIce"].second
-    if newdata["game_id"] not in playergames[existing["id"]]:
+    if newdata["game_id"] not in playergames[existing["id"]] and newdata["toi"].minute * 60 + newdata["toi"].second > 0:
         existing["games"] += 1
         playergames[existing["id"]].add(newdata["game_id"])
 
@@ -50,7 +52,7 @@ def setup_skater(data):
     if len(pdict["height"]) == 5:
         pdict["height"] = pdict["height"][:3] + "0" + pdict["height"][3:]
     pdict["currentTeamAbbr"] = data["currentTeam__abbreviation"]
-    pdict["position"] = getPosition(data["primaryPositionCode"])
+    pdict["position"] = data["primaryPositionCode"]
     pdict["age"] = helpers.calculate_age(data["birthDate"])
     return pdict
 
