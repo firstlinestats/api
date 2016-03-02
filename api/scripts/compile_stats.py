@@ -19,6 +19,17 @@ import player.models as pmodels
 import playbyplay.models as pbpmodels
 import playbyplay.helper as pbphelper
 from django.db import transaction
+import gzip
+
+from StringIO import StringIO
+
+from urllib2 import Request, urlopen, URLError
+
+headers = {
+    "User-Agent" : "Mozilla/5.0 (X11; U; Linux i686; " + \
+        "en-US; rv:1.9.2.24) Gecko/20111107 " + \
+        "Linux Mint/9 (Isadora) Firefox/3.6.24",
+}
 
 
 def get_values(ptype):
@@ -42,7 +53,7 @@ def get_values(ptype):
 
 
 def setup_player_dict(player_id, gamePk, ptype):
-    values = {1: {}, 2: {}, 3: {}, 4: {}, 5: {}}
+    values = {1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}}
     for period in values:
         strengths = {"all": {}, "even": {}, "pp": {}, "3v3": {},
             "pk": {}, "4v4": {}, "og": {}, "tg": {}, "oth": {}}
@@ -273,42 +284,43 @@ def handle_goal(pbp, gameDict, inplay, onice, homeStrength, awayStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 5:
-            # Find goalie who was scored on
-            for g in onice:
-                if g in gameDict["goalies"] and players[g] != team:
-                    gstrength = find_players_team_strength(players[g],
-                        homeTeam, awayTeam, homeStrength, awayStrength)
-                    for s in gstrength:
-                        shotType = "shots" + zone
-                        data = gameDict["goalies"][g][period][s]
-                        data[shotType] += 1
-            # Add stats for shooter
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    gf = team
-                    data["goals"] += 1
-                    data["sf"] += 1
-                    if sc == 2:
-                        data["ihsc"] += 1
-                    elif sc == 1:
-                        data["isc"] += 1
-        elif ptype == 6:
-            # Add stats for primary assist
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    data["assists"] += 1
-        elif ptype == 16:
-            # Add stats for secondary assist
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    data["assists2"] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 5:
+                # Find goalie who was scored on
+                for g in onice:
+                    if g in gameDict["goalies"] and players[g] != team:
+                        gstrength = find_players_team_strength(players[g],
+                            homeTeam, awayTeam, homeStrength, awayStrength)
+                        for s in gstrength:
+                            shotType = "shots" + zone
+                            data = gameDict["goalies"][g][period][s]
+                            data[shotType] += 1
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["goals"] += 1
+                        data["sf"] += 1
+                        if sc == 2:
+                            data["ihsc"] += 1
+                        elif sc == 1:
+                            data["isc"] += 1
+            elif ptype == 6:
+                # Add stats for primary assist
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        data["assists"] += 1
+            elif ptype == 16:
+                # Add stats for secondary assist
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        data["assists2"] += 1
     # Get values for those on the ice
     if previous_play is not None:
         seconds = diff_times_in_seconds(pbp.periodTime, previous_play.periodTime)
@@ -374,27 +386,30 @@ def handle_shot(pbp, gameDict, inplay, onice, homeStrength, awayStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 7:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["sf"] += 1
-                if sc == 2:
-                    data["ihsc"] += 1
-                elif sc == 1:
-                    data["isc"] += 1
-        elif ptype == 8:
-            # Add stats for goalie
-            shotType = "shots" + zone
-            saveType = "saves" + zone
-            for s in strength:
-                data = gameDict["goalies"][pid][period][s]
-                data[shotType] += 1
-                data[saveType] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 7:
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    pdata = gameDict["skaters"][pid][period]
+                    for s in strength:
+                        data = pdata[s]
+                        gf = team
+                        data["sf"] += 1
+                        if sc == 2:
+                            data["ihsc"] += 1
+                        elif sc == 1:
+                            data["isc"] += 1
+            elif ptype == 8:
+                # Add stats for goalie
+                shotType = "shots" + zone
+                saveType = "saves" + zone
+                for s in strength:
+                    data = gameDict["goalies"][pid][period][s]
+                    data[shotType] += 1
+                    data[saveType] += 1
 
 
     # Get values for those on the ice
@@ -459,28 +474,27 @@ def handle_blocked_shot(pbp, gameDict, inplay, onice, homeStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 7:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["bsf"] += 1
-                if sc == 2:
-                    data["ihsc"] += 1
-                elif sc == 1:
-                    data["isc"] += 1
-        elif ptype == 9:
-            # Add stats for shooter
-            for s in strength:
-                data = gameDict["skaters"][pid][period][s]
-                gf = team
-                data["ab"] += 1
-
-
-
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 7 and pid in gameDict["skaters"]:
+                # Add stats for shooter
+                for s in strength:
+                    data = gameDict["skaters"][pid][period][s]
+                    gf = team
+                    data["bsf"] += 1
+                    if sc == 2:
+                        data["ihsc"] += 1
+                    elif sc == 1:
+                        data["isc"] += 1
+            elif ptype == 9:
+                # Add stats for shooter
+                for s in strength:
+                    if pid in gameDict["skaters"]:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["ab"] += 1
     # Get values for those on the ice
     if previous_play is not None:
         seconds = diff_times_in_seconds(pbp.periodTime, previous_play.periodTime)
@@ -547,7 +561,7 @@ def handle_missed_shot(pbp, gameDict, inplay, onice, homeStrength,
             team = players[pid]
             strength = find_players_team_strength(players[pid], homeTeam,
                 awayTeam, homeStrength, awayStrength)
-            if ptype == 7:
+            if ptype == 7 and pid in gameDict["skaters"]:
                 # Add stats for shooter
                 for s in strength:
                     data = gameDict["skaters"][pid][period][s]
@@ -620,6 +634,9 @@ def handle_penalty(pbp, gameDict, inplay, onice, homeStrength,
     # Get values for those involved in play
     for p in inplay:
         pid = p["player_id"]
+        # handle weird instance where player serves penalty despite not playing in the game
+        if pid not in players:
+            continue
         ptype = p["player_type"]
         team = players[pid]
         strength = find_players_team_strength(players[pid], homeTeam,
@@ -677,16 +694,17 @@ def handle_takeaway(pbp, gameDict, inplay, onice, homeStrength,
     for p in inplay:
         pid = p["player_id"]
         ptype = p["player_type"]
-        team = players[pid]
-        strength = find_players_team_strength(players[pid], homeTeam,
-            awayTeam, homeStrength, awayStrength)
-        if ptype == 13:
-            # Add stats for shooter
-            if pid in gameDict["skaters"]:
-                for s in strength:
-                    data = gameDict["skaters"][pid][period][s]
-                    gf = team
-                    data["tk"] += 1
+        if pid in players:
+            team = players[pid]
+            strength = find_players_team_strength(players[pid], homeTeam,
+                awayTeam, homeStrength, awayStrength)
+            if ptype == 13:
+                # Add stats for shooter
+                if pid in gameDict["skaters"]:
+                    for s in strength:
+                        data = gameDict["skaters"][pid][period][s]
+                        gf = team
+                        data["tk"] += 1
 
     # Get values for those on the ice
     if previous_play is not None:
@@ -847,6 +865,8 @@ def handle_faceoff(pbp, gameDict, inplay, onice, homeStrength,
     for player in players:
         if player in gameDict["skaters"] and player not in exclude:
             data = gameDict["skaters"][player][period]
+            strength = find_players_team_strength(players[player], homeTeam,
+                awayTeam, homeStrength, awayStrength)
             for s in strength:
                 data[s]["timeOffIce"] += seconds
 
@@ -1093,5 +1113,102 @@ def main():
                 pmodels.CompiledGoalieGameStats.objects.bulk_create(gAddData)
 
 
+def update_player_stats(pd, team, game, players, period):
+    for sid in pd: # I swear that's not a Crosby reference
+        iid = int(sid.replace("ID", ""))
+        if "skaterStats" in pd[sid]["stats"]:
+            jp = pd[sid]["stats"]["skaterStats"]
+            if iid not in players:
+                player = ingest_player(jp)
+                players[player.id] = player
+            else:
+                player = players[iid]
+            try:
+                pgs, _ = pbpmodels.PlayerGameStats.objects.get_or_create(game=game,
+                    player=player, period=period)
+            except Exception as e:
+                print game.gamePk, player
+                raise e
+            pgs.timeOnIce = "00:" + jp["timeOnIce"]
+            pgs.assists = jp["assists"]
+            pgs.goals = jp["goals"]
+            pgs.shots = jp["shots"]
+            pgs.hits = jp["hits"]
+            pgs.powerPlayGoals = jp["powerPlayGoals"]
+            pgs.powerPlayAssists = jp["powerPlayAssists"]
+            pgs.penaltyMinutes = jp["penaltyMinutes"]
+            pgs.faceOffWins = jp["faceOffWins"]
+            pgs.faceoffTaken = jp["faceoffTaken"]
+            pgs.takeaways = jp["takeaways"]
+            pgs.giveaways = jp["giveaways"]
+            pgs.shortHandedGoals = jp["shortHandedGoals"]
+            pgs.shortHandedAssists = jp["shortHandedAssists"]
+            pgs.blocked = jp["blocked"]
+            pgs.plusMinus = jp["plusMinus"]
+            pgs.evenTimeOnIce = "00:" + jp["evenTimeOnIce"]
+            pgs.powerPlayTimeOnIce = "00:" + jp["powerPlayTimeOnIce"]
+            pgs.shortHandedTimeOnIce = "00:" + jp["shortHandedTimeOnIce"]
+            pgs.team = team
+            pgs.save()
+
+
+def get_game(id=None):
+    url = "http://statsapi.web.nhl.com/api/v1/game/<gamePk>/feed/live/".replace("<gamePk>", str(id))
+    return get_url(url)
+
+
+def get_url(url):
+    request = Request(url, headers=headers)
+    request.add_header('Accept-encoding', 'gzip')
+    try:
+        response = urlopen(request)
+        if response.info().get('Content-Encoding') == 'gzip':
+            buf = StringIO( response.read())
+            f = gzip.GzipFile(fileobj=buf)
+            html = f.read()
+        else:
+            html = response.read()
+    except URLError, e:
+        print e
+        return "{}"
+    return html
+
+
+def find_unknown_teams():
+    players = {}
+    tplayers = pmodels.Player.objects.all()
+    for t in tplayers:
+        players[t.id] = t
+    games = set(pbpmodels.PlayerGameStats.objects.values_list("game", flat=True).filter(team=None))
+    count = 0
+    for gameid in sorted(games):
+        with transaction.atomic():
+            game = pbpmodels.Game.objects.get(gamePk=gameid)
+            count += 1
+            if count % 100 == 0:
+                print count, len(games), game
+            allpgss = []
+            allperiods = []
+            homeMissed = 0
+            awayMissed = 0
+            count += 1
+            if count % 100 == 0:
+                print count, game.gamePk
+            j = json.loads(get_game(gameid))
+            gd = j["gameData"]
+            ld = j["liveData"]
+            boxScore = ld["boxscore"]
+            lineScore = ld["linescore"]
+            cperiod = 1
+            for period in lineScore["periods"]:
+                if period["num"] > cperiod:
+                    cperiod = period["num"]
+            hp = boxScore["teams"]["home"]["players"]
+            ap = boxScore["teams"]["away"]["players"]
+            update_player_stats(hp, game.homeTeam, game, players, cperiod)
+            update_player_stats(ap, game.awayTeam, game, players, cperiod)
+
+
 if __name__ == "__main__":
     main()
+    #find_unknown_teams()
