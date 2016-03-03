@@ -112,11 +112,11 @@ class GoalieGameStatsViewSet(viewsets.ViewSet):
         if "player" in getValues and len(getValues["player"]) > 0:  
             shotsKwargs = kwargs
             del shotsKwargs['player_id__in']  
-            leaugeShots = CompiledGoalieGameStats.objects.\
+            leagueShots = CompiledGoalieGameStats.objects.\
                 values("shotsLow", "shotsMedium", "shotsHigh").\
                 filter(*args, **shotsKwargs)
         else:
-            leaugeShots = CompiledGoalieGameStats.objects.\
+            leagueShots = CompiledGoalieGameStats.objects.\
                 values("shotsLow", "shotsMedium", "shotsHigh").filter(*args, **kwargs)
 
 
@@ -124,20 +124,20 @@ class GoalieGameStatsViewSet(viewsets.ViewSet):
         compiled = []
         playergames = {}
 
-        leaugeShotsLow = 0
-        leaugeShotsMedium = 0
-        leaugeShotsHigh = 0
+        leagueShotsLow = 0
+        leagueShotsMedium = 0
+        leagueShotsHigh = 0
 
-        for data in leaugeShots:
-            leaugeShotsLow += data['shotsLow']
-            leaugeShotsMedium += data['shotsMedium']
-            leaugeShotsHigh += data['shotsHigh']
+        for data in leagueShots:
+            leagueShotsLow += data['shotsLow']
+            leagueShotsMedium += data['shotsMedium']
+            leagueShotsHigh += data['shotsHigh']
        
 
         for data in gameData:
-            data["leaugeShotsLow"] = leaugeShotsLow
-            data["leaugeShotsMedium"] = leaugeShotsMedium
-            data["leaugeShotsHigh"] = leaugeShotsHigh
+            data["leagueShotsLow"] = leagueShotsLow
+            data["leagueShotsMedium"] = leagueShotsMedium
+            data["leagueShotsHigh"] = leagueShotsHigh
 
             pname = data["player__fullName"]
             if pname not in players:
@@ -164,7 +164,7 @@ def add_goalie(existing, newdata, playergames):
         "player__currentTeam__abbreviation", "player__fullName",
         "game__season", "player__height", "player__weight",
         "player__birthDate", "player__primaryPositionCode",
-        "leaugeShotsLow", "leaugeShotsMedium", "leaugeShotsHigh"]
+        "leagueShotsLow", "leagueShotsMedium", "leagueShotsHigh"]
     for key in newdata:
         if key not in exclude:
             existing[key] += newdata[key]
