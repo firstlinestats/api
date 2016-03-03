@@ -6,3 +6,4 @@ mysql-python
 pytz
 django-cors-headers
 django-rest-swagger
+django-debug-toolbar
