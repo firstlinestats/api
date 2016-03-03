@@ -10,8 +10,8 @@ from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from playbyplay import models
 from playbyplay.constants import gameTypes, gameStates
 
-from helper import getPosition, setup_skater, add_player, get_client_ip
-from models import CompiledPlayerGameStats, Player
+from helper import getPosition, setup_skater, add_player, get_client_ip, setup_goalie, add_goalie
+from models import CompiledPlayerGameStats, CompiledGoalieGameStats, Player
 
 
 # Create your views here.
@@ -149,3 +149,142 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                     playerstoi.append(players[player])
             return Response(playerstoi)
         return Response(players.values())
+
+
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class GoalieGameStatsViewSet(viewsets.ViewSet):
+    def list(self, request):
+        currentSeason = models.Game.objects.latest("endDateTime").season
+        getValues = dict(request.GET)
+        for key in getValues:
+            val = getValues[key]
+            if len(val) == 0:
+                getValues.pop(key, None)
+        args = ()
+        kwargs = {
+            'game__gameState__in': [6, 7, 8],
+            'game__season__in': [currentSeason, ]
+        }
+        if "player" in getValues and len(getValues["player"]) > 0:
+            player = getValues["player"]
+            kwargs['player_id__in'] = player
+        if "date_start" in getValues and "date_end" in getValues:
+            try:
+                date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
+                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
+
+                kwargs['game__dateTime__gte'] = date_start
+                kwargs['game__dateTime__lte'] = date_end
+            except:
+                date_start = None
+                date_end = None
+        kwargs['period__in'] = [1,2,3,4] 
+        if "period" in getValues:
+            try:
+                kwargs['period'] = int(getValues["period"][0])
+            except:
+                pass
+        args = (Q(strength = "all"), )
+        if "strength" in getValues:
+            try:
+                kwargs['strength'] = getValues["strength"][0]
+            except Exception as e:
+                pass
+        bySeason = False
+        if "divide_by_season" in getValues:
+            if "on" == getValues["divide_by_season"][0]:
+                bySeason = True
+        game_types = gameTypes
+        if "game_type" in getValues and len(getValues["game_type"]) > 0:
+            game_types = getValues["game_type"]
+            kwargs['game__gameType__in'] = game_types
+        venues = None
+        if "venues" in getValues and len(getValues["venues"]) > 0:
+            venues = getValues["venues"]
+            kwargs['game__venue__name__in'] = venues
+        teams = None
+        if "teams" in getValues and len(getValues["teams"]) > 0:
+            teams = getValues["teams"]
+            args = ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
+        toi = None
+        if "toi" in getValues and len(getValues["toi"]) > 0:
+            try:
+                toi = int(getValues["toi"][0]) * 60
+            except:
+                pass
+        seasons = currentSeason
+        if "seasons" in getValues and len(getValues["seasons"]) > 0:
+            seasons = getValues["seasons"]
+            kwargs['game__season__in'] = seasons
+        home_or_away = None
+        if "home_or_away" in getValues and len(getValues["home_or_away"]) > 0:
+            try:
+                home_or_away = int(getValues["home_or_away"][0])
+                if home_or_away == 1:
+                    home_or_away = False
+                elif home_or_away == 2:
+                    home_or_away = None
+                else:
+                    home_or_away = True
+            except:
+                pass
+
+        gameData = CompiledGoalieGameStats.objects.\
+            values("player_id", "player__fullName", "game__season",
+                "player__currentTeam__abbreviation", "game_id",
+                "player__height", "player__weight", "player__birthDate", 
+                "player__primaryPositionCode", "shotsLow",
+                "savesLow", "shotsMedium", "savesMedium", "shotsHigh",
+                "savesHigh", "toi").filter(*args, **kwargs)
+
+
+        if "player" in getValues and len(getValues["player"]) > 0:  
+            shotsKwargs = kwargs
+            del shotsKwargs['player_id__in']  
+            leagueShots = CompiledGoalieGameStats.objects.\
+                values("shotsLow", "shotsMedium", "shotsHigh").\
+                filter(*args, **shotsKwargs)
+        else:
+            leagueShots = CompiledGoalieGameStats.objects.\
+                values("shotsLow", "shotsMedium", "shotsHigh").filter(*args, **kwargs)
+                
+        players = {}
+        compiled = []
+        playergames = {}
+
+        leagueShotsLow = 0
+        leagueShotsMedium = 0
+        leagueShotsHigh = 0
+
+        for data in leagueShots:
+            leagueShotsLow += data['shotsLow']
+            leagueShotsMedium += data['shotsMedium']
+            leagueShotsHigh += data['shotsHigh']
+       
+
+        for data in gameData:
+            data["leagueShotsLow"] = leagueShotsLow
+            data["leagueShotsMedium"] = leagueShotsMedium
+            data["leagueShotsHigh"] = leagueShotsHigh
+
+            pname = data["player__fullName"]
+            if pname not in players:
+                player = setup_goalie(data)
+                playergames[pname] = set()
+                playergames[pname].add(data["game_id"])
+                players[player["name"]] = player
+            else:
+                add_goalie(players[pname], data, playergames)
+
+        if toi is not None:
+            playerstoi = []
+            for player in players:
+                if players[player]["toi"] / players[player]["games"] >= toi:
+                    playerstoi.append(players[player])
+            return Response(playerstoi)
+        
+        return Response(players.values())
+
+
+
+

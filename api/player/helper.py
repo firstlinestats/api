@@ -64,3 +64,40 @@ def get_client_ip(request):
     else:
         ip = request.META.get('REMOTE_ADDR')
     return ip
+
+def add_goalie(existing, newdata, playergames):
+    exclude = ["game", "player", "period", "strength",
+        "player_id", "game_id", "_state", "toi", "timeOffIce",
+        "player__currentTeam__abbreviation", "player__fullName",
+        "game__season", "player__height", "player__weight",
+        "player__birthDate", "player__primaryPositionCode",
+        "leagueShotsLow", "leagueShotsMedium", "leagueShotsHigh"]
+    for key in newdata:
+        if key not in exclude:
+            existing[key] += newdata[key]
+    existing["toi"] += newdata["toi"].minute * 60 + newdata["toi"].second
+    if newdata["game_id"] not in playergames[existing["name"]]:
+        existing["games"] += 1
+        playergames[existing["name"]].add(newdata["game_id"])
+
+
+def setup_goalie(data):
+    pdict = {"name": data["player__fullName"],
+        "season": data["game__season"],
+        "team": data["player__currentTeam__abbreviation"], 
+        "weight" : data["player__weight"], "height" : data["player__height"]}
+    exclude = ["toi", "timeOffIce", "player__fullName",
+        "player__currentTeam__abbreviation", "game__season",
+        "player__birthDate", "player__primaryPositionCode", "game_id", 
+        "player__weight", "player__height"]
+    for key in data:
+        if key not in exclude:
+            pdict[key] = data[key]
+    pdict["games"] = 1
+    if len(pdict["height"]) == 5:
+        pdict["height"] = pdict["height"][:3] + "0" + pdict["height"][3:]
+    pdict["currentTeam"] = pdict["team"]
+    pdict["position"] = getPosition(data["player__primaryPositionCode"])
+    pdict["age"] = helpers.calculate_age(data["player__birthDate"])
+    pdict["toi"] = data["toi"].minute * 60 + data["toi"].second
+    return pdict
