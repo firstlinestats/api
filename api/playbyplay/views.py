@@ -91,9 +91,6 @@ class GameDataViewSet(viewsets.ViewSet):
                 player["name"] = playerdata["player__fullName"]
                 player["position"] = playerdata["player__primaryPositionCode"]
                 player["team"] = playerdata["team__teamName"]
-                #player["toi"] = playerdata.timeOnIce
-                #player["pptoi"] = playerdata.powerPlayTimeOnIce
-                #player["shtoi"] = playerdata.shortHandedTimeOnIce
                 player["toi"] = 0
                 players[playerdata["player_id"]] = player
             for goaliedata in goalieStats:
@@ -101,9 +98,6 @@ class GameDataViewSet(viewsets.ViewSet):
                 player["name"] = goaliedata["player__fullName"]
                 player["position"] = goaliedata["player__primaryPositionCode"]
                 player["team"] = goaliedata["team__teamName"]
-                #player["toi"] = playerdata.timeOnIce
-                #player["pptoi"] = playerdata.powerPlayTimeOnIce
-                #player["shtoi"] = playerdata.shortHandedTimeOnIce
                 player["toi"] = 0
                 player["teamAbbr"] = goaliedata["team__abbreviation"]
                 players[goaliedata["player_id"]] = player
