@@ -381,6 +381,8 @@ class GameDataViewSet(viewsets.ViewSet):
                         scs[play_id] = {"sc": sc, "danger": danger}
                         for pid in poi:
                             player = players[pid]
+                            if player["name"] == "Mark Letestu":
+                                print players[pid]["team"]
                             if player["position"] != "G" and ((players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
                                     (players[pid]["team"] == awayTeam["teamName"] and awayinclude)):
                                 if player["team"] == team:
