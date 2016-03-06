@@ -1,6 +1,7 @@
 from __future__ import division
 
 from django.db.models import Q
+from django.utils import timezone
 from django.shortcuts import render, get_object_or_404
 
 from rest_framework import viewsets
@@ -799,7 +800,6 @@ class GameListViewSet(viewsets.ViewSet):
             teams = getValues["teams"]
             args = ( Q(awayTeam__in = getValues['teams']) | Q(homeTeam__in = getValues['teams']), )
         seasons = currentSeason
-        print getValues
         if "seasons" in getValues and len(getValues["seasons"]) > 0:
             seasons = getValues["seasons"]
             seasons = [int(x) for x in seasons]
@@ -816,7 +816,7 @@ class GameListViewSet(viewsets.ViewSet):
         if "date_start" in getValues and "date_end" in getValues:
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
-                date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
+                date_end = datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
                 kwargs['dateTime__gte'] = date_start
                 kwargs['dateTime__lte'] = date_end
             except:
@@ -830,6 +830,7 @@ class GameListViewSet(viewsets.ViewSet):
                 'homeMissed', 'gameState', 'endDateTime')\
             .filter(*args, **kwargs).order_by('-gamePk')
         gameList = []
+        us_tz = pytz.timezone("US/Eastern")
         for game in games:
             g = {}
             for item in gameTypes:
@@ -841,11 +842,11 @@ class GameListViewSet(viewsets.ViewSet):
             for item in gameStates:
                 if item[0] == game['gameState']:
                     g['gameState'] = item[1]
-            g['dateTime'] = game['dateTime'].astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
+            g['dateTime'] = game['dateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
             g['endDateTime'] = ''
             if game['endDateTime'] is not None:
-                g['endDateTime'] = game['endDateTime'].astimezone(pytz.timezone('US/Eastern')).strftime("%I:%M %p EST")
-            g['date'] = game['dateTime'].date()
+                g['endDateTime'] = game['endDateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
+            g['date'] = game['dateTime'].astimezone(us_tz).date()
             g['gamePk'] = game['gamePk']
             hShots = game['homeShots'] or 0
             hScore = game['homeScore'] or 0
