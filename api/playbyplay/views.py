@@ -71,11 +71,14 @@ class GameDataViewSet(viewsets.ViewSet):
             "homesa": [{"seconds": 0, "value": 0}],
             "awaysa": [{"seconds": 0, "value": 0}],
             "pend": []}
+        links = []
+        nodes = []
+        p2s = {}
 
         if game["gameState"] in ['3', '4', '5', '6', '7']:
             pbp = models.PlayByPlay.objects.values("id", "period", "periodTime", "playType", "team__teamName",
                 "xcoord", "ycoord", "shotType", "penaltySeverity", "penaltyMinutes").filter(*args, **kwargs).order_by("period", "periodTime")
-            playerStats = models.PlayerGameStats.objects.values("player_id", "player__fullName", "player__primaryPositionCode", "team__teamName").filter(game=gamePk).order_by('team', 'player__lastName')
+            playerStats = models.PlayerGameStats.objects.values("player_id", "player__fullName", "player__primaryPositionCode", "team__teamName", "team_id").filter(game=gamePk).order_by('team', 'player__lastName')
             goalieStats = models.GoalieGameStats.objects.values("player_id", "player__fullName", "player__primaryPositionCode", "team__teamName", "team__abbreviation").filter(game=gamePk)
 
             homeTeam = helper.init_team()
@@ -93,6 +96,9 @@ class GameDataViewSet(viewsets.ViewSet):
                 player["team"] = playerdata["team__teamName"]
                 player["toi"] = 0
                 players[playerdata["player_id"]] = player
+                if player["name"] not in p2s:
+                    nodes.append({"name": player["name"], "team": player["team"], "group": playerdata["team_id"]})
+                    p2s[player["name"]] = len(nodes) - 1
             for goaliedata in goalieStats:
                 player = helper.init_goalie()
                 player["name"] = goaliedata["player__fullName"]
@@ -199,6 +205,26 @@ class GameDataViewSet(viewsets.ViewSet):
                             if (players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
                                     (players[pid]["team"] == awayTeam["teamName"] and awayinclude):
                                 players[pid]["toi"] += addedTime
+                    for pid in poi:
+                        player = players[pid]
+                        if player["position"] != "G" and ((player["team"] == homeTeam["teamName"] and homeinclude) or\
+                            (player["team"] == awayTeam["teamName"] and awayinclude)):
+                            sourceid = p2s[player["name"]]
+                            for targetplayer in poi:
+                                if players[targetplayer]["position"] != "G":
+                                    targetid = p2s[players[targetplayer]["name"]]
+                                    exists = False
+                                    for source in links:
+                                        if source["source"] == sourceid and source["target"] == targetid:
+                                            exists = True
+                                            break
+                                    if exists is False:
+                                        source = {"source": sourceid, "target": targetid, "sourcename": player["name"], "targetname": players[targetplayer]["name"],
+                                            "TOI": 0, "evf": 0, "eva": 0, "cf%": 0}
+                                        links.append(source)
+                                        source = links[-1]
+                                    source["TOI"] += addedTime
+
                     if play_type in ["SHOT", "GOAL", "MISSED_SHOT", "BLOCKED_SHOT"]:
                         danger, sc = self.calculate_scoring_chance(play, previous_shot, previous_danger, previous)
                         previous_shot = play
@@ -206,6 +232,26 @@ class GameDataViewSet(viewsets.ViewSet):
                         scs[play_id] = {"sc": sc, "danger": danger}
                         for pid in poi:
                             player = players[pid]
+                            if player["position"] != "G" and ((player["team"] == homeTeam["teamName"] and homeinclude) or\
+                                (player["team"] == awayTeam["teamName"] and awayinclude)):
+                                sourceid = p2s[player["name"]]
+                                for targetplayer in poi:
+                                    if players[targetplayer]["position"] != "G":
+                                        targetid = p2s[players[targetplayer]["name"]]
+                                        exists = False
+                                        for source in links:
+                                            if source["source"] == sourceid and source["target"] == targetid:
+                                                exists = True
+                                                break
+                                        if exists is False:
+                                            source = {"source": sourceid, "target": targetid, "sourcename": player["name"], "targetname": players[targetplayer]["name"],
+                                                "TOI": 0, "evf": 0, "eva": 0, "cf%": 0}
+                                            links.append(source)
+                                            source = links[-1]
+                                        if player["team"] == team:
+                                            source["evf"] += 1
+                                        else:
+                                            source["eva"] += 1
                             if player["name"] == "Mark Letestu":
                                 print players[pid]["team"]
                             if player["position"] != "G" and ((players[pid]["team"] == homeTeam["teamName"] and homeinclude) or\
@@ -214,6 +260,7 @@ class GameDataViewSet(viewsets.ViewSet):
                                     player["scf"] += 1
                                 else:
                                     player["sca"] += 1
+
                         if team == homeTeam["teamName"]:
                             helper.calc_sa(gameData["eventcount"]["homesa"], seconds)
                             if sc == 1 and homeinclude:
@@ -235,7 +282,7 @@ class GameDataViewSet(viewsets.ViewSet):
                             ycoord = play["ycoord"]
                             if xcoord < 0:
                                 xcoord = abs(xcoord)
-                                ycoord = -ycoord
+                                ycoord = ycoord
                             gameData["shotData"]["home"].append({"x": xcoord,
                                 "y": ycoord, "type": play_type, "danger": danger,
                                 "scoring_chance": sc})
@@ -489,6 +536,15 @@ class GameDataViewSet(viewsets.ViewSet):
                 gameData["eventcount"]["homepp"][-1]["length"] = final - gameData["eventcount"]["homepp"][-1]["seconds"]
             if gameData["eventcount"]["awaypp"][-1]["seconds"] + gameData["eventcount"]["awaypp"][-1]["length"] > final:
                 gameData["eventcount"]["awaypp"][-1]["length"] = final - gameData["eventcount"]["awaypp"][-1]["seconds"]
+
+        for source in links:
+            if source["eva"] + source["evf"] != 0:
+                source["cf%"] = round(source["evf"] / (source["evf"] + source["eva"]) * 100, 2)
+            else:
+                source["cf%"] = 0
+            if source["source"] == source["target"]:
+                nodes[source["source"]]["toi"] = source["TOI"]
+        gameData["pvp"] = {"nodes": nodes, "links": links}
 
         return Response(gameData)
 
