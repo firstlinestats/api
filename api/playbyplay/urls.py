@@ -3,7 +3,8 @@ from rest_framework import routers
 import views
 
 router = routers.DefaultRouter()
-router.register(r'recent', views.RecentGameViewSet)
+router.register(r'recent', views.RecentGameViewSet,
+    base_name="RecentData")
 router.register(r'game', views.GameDataViewSet,
     base_name="GameData")
 router.register(r'games', views.GameListViewSet,

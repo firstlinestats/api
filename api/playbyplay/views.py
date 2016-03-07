@@ -767,9 +767,54 @@ class GameDataViewSet(viewsets.ViewSet):
         return( t2_secs - t1_secs)
 
 
-class RecentGameViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = models.Game.objects.filter(dateTime__date__lte=datetime.date.today()).order_by('-dateTime', '-gamePk')[:30]
-    serializer_class = serializers.RecentGameSerializer
+@permission_classes((IsAuthenticatedOrReadOnly, ))
+class RecentGameViewSet(viewsets.ViewSet):
+    def list(self, request):
+        currentSeason = models.Game.objects.latest("endDateTime").season
+        kwargs = {
+            'dateTime__lte': datetime.datetime.utcnow(),
+            'season' : currentSeason
+        }
+        args = ()
+        games = models.Game.objects\
+            .values('gamePk', 'dateTime', 'gameType', 'gameState', 'awayTeam', 'homeTeam', 'awayTeam__abbreviation', 
+                'homeTeam__abbreviation', 'homeTeam__id', 
+                'awayTeam__id', 'homeTeam__shortName', 'awayTeam__shortName', 'homeScore', 'awayScore', 'awayShots', 
+                'homeShots', 'awayBlocked', 'homeBlocked', 'awayMissed',
+                'homeMissed', 'gameState', 'endDateTime')\
+            .filter(*args, **kwargs).order_by('-gamePk')
+        gameList = []
+        us_tz = pytz.timezone("US/Eastern")
+        for game in games:
+            g = {}
+            for item in gameTypes:
+                if item[0] == game['gameType']:
+                    g['gameType'] = item[1]
+            g['homeTeam'] = {"id" : game['homeTeam__id'], "name" :  game['homeTeam__shortName'], "abbreviation" : game['homeTeam__abbreviation']}
+            g['awayTeam'] = {"id" : game['awayTeam__id'], "name" : game['awayTeam__shortName'], "abbreviation" : game['awayTeam__abbreviation']}
+            g['score'] = str(game['homeScore']) + "-" + str(game['awayScore'])
+            for item in gameStates:
+                if item[0] == game['gameState']:
+                    g['gameState'] = item[1]
+            g['dateTime'] = game['dateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
+            g['endDateTime'] = ''
+            if game['endDateTime'] is not None:
+                g['endDateTime'] = game['endDateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
+            g['date'] = game['dateTime'].astimezone(us_tz).date()
+            g['gamePk'] = game['gamePk']
+            hShots = game['homeShots'] or 0
+            hScore = game['homeScore'] or 0
+            hMissed = game['homeMissed'] or 0
+            aBlocked = game['awayBlocked'] or 0
+            homeCorsi = hShots +hScore + hMissed + aBlocked
+            aShots = game['awayShots'] or 0
+            aScore = game['awayScore'] or 0
+            aMissed = game['awayMissed'] or 0
+            hBlocked = game['homeBlocked'] or 0
+            awayCorsi = aShots + aScore + aMissed + hBlocked
+            g['corsi'] = str(homeCorsi) + "/" + str(awayCorsi)
+            gameList.append(g)          
+        return Response(gameList)
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))
 class GameListViewSet(viewsets.ViewSet):
@@ -787,6 +832,7 @@ class GameListViewSet(viewsets.ViewSet):
         args = ()
         team = None
         if "team" in getValues and len(getValues["team"]) > 0:
+            kwargs.pop("gameState__in", None)
             team = getValues["team"][0]
             args = ( Q(awayTeam__abbreviation = team) | Q(homeTeam__abbreviation = team), )
             if "teams" in getValues and len(getValues["teams"]) > 0:
@@ -831,6 +877,7 @@ class GameListViewSet(viewsets.ViewSet):
             .filter(*args, **kwargs).order_by('-gamePk')
         gameList = []
         us_tz = pytz.timezone("US/Eastern")
+        calendar = []
         for game in games:
             g = {}
             for item in gameTypes:
@@ -859,5 +906,14 @@ class GameListViewSet(viewsets.ViewSet):
             hBlocked = game['homeBlocked'] or 0
             awayCorsi = aShots + aScore + aMissed + hBlocked
             g['corsi'] = str(homeCorsi) + "/" + str(awayCorsi)
-            gameList.append(g)          
-        return Response(gameList)
+            if int(game["gameState"]) in [6, 7, 8]:
+                gameList.append(g)
+            else:
+                calendar.append(g)
+        if team is None:
+            return Response(gameList)
+        else:
+            teamData = {}
+            teamData["finished"] = gameList
+            teamData["remaining"] = calendar
+            return Response(teamData)
