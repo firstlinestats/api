@@ -13,6 +13,8 @@ from playbyplay.constants import gameTypes, gameStates
 from helper import getPosition, setup_skater, add_player, get_client_ip, setup_goalie, add_goalie
 from models import CompiledPlayerGameStats, CompiledGoalieGameStats, Player
 
+import datetime
+
 
 # Create your views here.
 @permission_classes((IsAuthenticatedOrReadOnly, ))
@@ -48,7 +50,8 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
 
                 kwargs['game__dateTime__gte'] = date_start
                 kwargs['game__dateTime__lte'] = date_end
-            except:
+            except Exception as e:
+                print e
                 date_start = None
                 date_end = None
         if "period" in getValues:
