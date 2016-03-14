@@ -940,177 +940,180 @@ def main():
         # For every player, every game, every period, define dict
         # Each dict should contain every strength as a key
         # That will hold another dict with the information
-        print game["gamePk"]
-        homeTeam = game["homeTeam_id"]
-        awayTeam = game["awayTeam_id"]
-        gameDict = {"skaters": {}, "goalies": {}}
-        players = {}
-        goalies = {}
-        tskaters = pbpmodels.PlayerGameStats.objects.filter(game=game["gamePk"])
-        tgoalies = pbpmodels.GoalieGameStats.objects.filter(game=game["gamePk"])
-        for skater in tskaters:
-            gameDict["skaters"][skater.player.id] = setup_skater(skater.player.id,
-                game["gamePk"])
-            if skater.team is not None:
-                players[skater.player.id] = skater.team.id
-        for goalie in tgoalies:
-            gameDict["goalies"][goalie.player.id] = setup_goalie(goalie.player.id,
-                game["gamePk"])
-            players[goalie.player.id] = goalie.team.id
-            goalies[goalie.player.id] = goalie.team.id
-        # For every play in that game
-        previous_play = None
-        previous_shot = None
-        previous_danger = None
-        if len(gameDict["skaters"]) > 0:
-            for pbp in pbpmodels.PlayByPlay.objects.filter(gamePk_id=game["gamePk"]).order_by("period", "periodTime"):
-                # Add the relevant stats for that play to the respective players
-                inplay = pbpmodels.PlayerInPlay.objects.values("player_id", "player_type").filter(play_id=pbp.id)
-                onice = pbpmodels.PlayerOnIce.objects.values_list("player_id", flat=True).filter(play_id=pbp.id)
-                for player in onice:
-                    if player not in players:
-                        gameDict["skaters"][player] = setup_skater(player, game["gamePk"])
-                homeStrength, awayStrength = get_strengths(onice, players, homeTeam, awayTeam, goalies)
-                playType = pbp.playType
-                if playType == "FACEOFF":
-                    handle_faceoff(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        previous_play)
-                elif playType == "HIT":
-                    handle_hit(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        previous_play)
-                elif playType == "GIVEAWAY":
-                    handle_giveaway(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        previous_play)
-                elif playType == "GOAL":
-                    shotZone, shotSC = calculate_scoring_chance(pbp,
-                        previous_shot, previous_danger, previous_play)
-                    handle_goal(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        shotZone, shotSC, previous_play)
-                    previous_shot = pbp
-                    previous_danger = shotZone
-                elif playType == "SHOT":
-                    shotZone, shotSC = calculate_scoring_chance(pbp,
-                        previous_shot, previous_danger, previous_play)
-                    handle_shot(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        shotZone, shotSC, previous_play)
-                    previous_shot = pbp
-                    previous_danger = shotZone
-                elif playType == "MISSED_SHOT":
-                    shotZone, shotSC = calculate_scoring_chance(pbp,
-                        previous_shot, previous_danger, previous_play)
-                    handle_missed_shot(pbp, gameDict, inplay, onice,
-                        homeStrength, awayStrength, players, homeTeam,
-                        awayTeam, shotZone, shotSC, previous_play)
-                    previous_shot = pbp
-                    previous_danger = shotZone
-                elif playType == "PENALTY":
-                    handle_penalty(pbp, gameDict, inplay, onice,
-                        homeStrength, awayStrength, players, homeTeam,
-                        awayTeam, previous_play)
-                elif playType == "PENALTY_END":
-                    pass
-                elif playType == "STOP":
-                    pass
-                elif playType == "SUBSTITUTION":
-                    pass
-                elif playType == "FIGHT":
-                    pass
-                elif playType == "TAKEAWAY":
-                    handle_takeaway(pbp, gameDict, inplay, onice, homeStrength,
-                        awayStrength, players, homeTeam, awayTeam,
-                        previous_play)
-                elif playType == "BLOCKED_SHOT":
-                    shotZone, shotSC = calculate_scoring_chance(pbp,
-                        previous_shot, previous_danger, previous_play)
-                    handle_blocked_shot(pbp, gameDict, inplay, onice,
-                        homeStrength, awayStrength, players, homeTeam,
-                        awayTeam, shotZone, shotSC, previous_play)
-                    previous_shot = pbp
-                    previous_danger = shotZone
-                elif playType == "PERIOD_START":
-                    pass
-                elif playType == "PERIOD_END":
-                    pass
-                elif playType == "GAME_END":
-                    pass
-                elif playType == "GAME_SCHEDULED":
-                    pass
-                elif playType == "PERIOD_READY":
-                    pass
-                elif playType == "PERIOD_OFFICIAL":
-                    pass
-                elif playType == "SHOOTOUT_COMPLETE":
-                    pass
-                elif playType == "EARLY_INT_START":
-                    pass
-                elif playType == "EARLY_INT_END":
-                    pass
-                elif playType == "GAME_OFFICIAL":
-                    pass
-                elif playType == "CHALLENGE":
-                    pass
-                elif playType == "EMERGENCY_GOALTENDER":
-                    pass
-                # Update those who were on the ice for the play as well
-                previous_play = pbp
-            sAddData = []
-            gAddData = []
-            for pid in gameDict["skaters"]:
-                skater = gameDict["skaters"][pid]
-                for p in skater:
-                    period = skater[p]
-                    for strength in period:
-                        relevant = ["goals", "assists", "assists2", "gf",
-                            "ga", "pnDrawn", "pn", "sf", "msf",
-                            "bsf", "onsf", "onmsf", "onbsf", "offgf", "offsf",
-                            "offmsf", "offbsf", "offga", "offsa",
-                            "offmsa", "offbsa", "sa", "msa", "bsa", "zso",
-                            "zsn", "zsd", "toi", "ihsc", "isc", "sc",
-                            "hscf", "hsca", "sca", "fo_w", "fo_l", "hit",
-                            "hitt", "gv", "tk", "toi", "timeOffIce", "ab"]
-                        add = False
-                        for key in relevant:
-                            if period[strength][key] > 0:
-                                add = True
-                                break
-                        if add:
-                            m, s = divmod(period[strength]["toi"], 60)
-                            h, m = divmod(m, 60)
-                            toi = "%d:%02d:%02d" % (h, m, s)
-                            period[strength]["toi"] = toi
-                            m, s = divmod(period[strength]["timeOffIce"], 60)
-                            h, m = divmod(m, 60)
-                            toi = "%d:%02d:%02d" % (h, m, s)
-                            period[strength]["timeOffIce"] = toi
-                            cpgs = pmodels.CompiledPlayerGameStats(**period[strength])
-                            sAddData.append(cpgs)
-            for pid in gameDict["goalies"]:
-                skater = gameDict["goalies"][pid]
-                for p in skater:
-                    period = skater[p]
-                    for strength in period:
-                        relevant = ["shotsLow", "savesLow", "shotsMedium",
-                            "savesMedium", "shotsHigh", "savesHigh", "toi"]
-                        add = False
-                        for key in relevant:
-                            if period[strength][key] > 0:
-                                add = True
-                                break
-                        if add:
-                            m, s = divmod(period[strength]["toi"], 60)
-                            h, m = divmod(m, 60)
-                            toi = "%d:%02d:%02d" % (h, m, s)
-                            period[strength]["toi"] = toi
-                            cggs = pmodels.CompiledGoalieGameStats(**period[strength])
-                            gAddData.append(cggs)
-            with transaction.atomic():
-                pmodels.CompiledPlayerGameStats.objects.bulk_create(sAddData)
-                pmodels.CompiledGoalieGameStats.objects.bulk_create(gAddData)
+        compile_game(game)
+
+
+def compile_game(game):
+    homeTeam = game["homeTeam_id"]
+    awayTeam = game["awayTeam_id"]
+    gameDict = {"skaters": {}, "goalies": {}}
+    players = {}
+    goalies = {}
+    tskaters = pbpmodels.PlayerGameStats.objects.filter(game=game["gamePk"])
+    tgoalies = pbpmodels.GoalieGameStats.objects.filter(game=game["gamePk"])
+    for skater in tskaters:
+        gameDict["skaters"][skater.player.id] = setup_skater(skater.player.id,
+            game["gamePk"])
+        if skater.team is not None:
+            players[skater.player.id] = skater.team.id
+    for goalie in tgoalies:
+        gameDict["goalies"][goalie.player.id] = setup_goalie(goalie.player.id,
+            game["gamePk"])
+        players[goalie.player.id] = goalie.team.id
+        goalies[goalie.player.id] = goalie.team.id
+    # For every play in that game
+    previous_play = None
+    previous_shot = None
+    previous_danger = None
+    if len(gameDict["skaters"]) > 0:
+        for pbp in pbpmodels.PlayByPlay.objects.filter(gamePk_id=game["gamePk"]).order_by("period", "periodTime"):
+            # Add the relevant stats for that play to the respective players
+            inplay = pbpmodels.PlayerInPlay.objects.values("player_id", "player_type").filter(play_id=pbp.id)
+            onice = pbpmodels.PlayerOnIce.objects.values_list("player_id", flat=True).filter(play_id=pbp.id)
+            for player in onice:
+                if player not in players:
+                    gameDict["skaters"][player] = setup_skater(player, game["gamePk"])
+            homeStrength, awayStrength = get_strengths(onice, players, homeTeam, awayTeam, goalies)
+            playType = pbp.playType
+            if playType == "FACEOFF":
+                handle_faceoff(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    previous_play)
+            elif playType == "HIT":
+                handle_hit(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    previous_play)
+            elif playType == "GIVEAWAY":
+                handle_giveaway(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    previous_play)
+            elif playType == "GOAL":
+                shotZone, shotSC = calculate_scoring_chance(pbp,
+                    previous_shot, previous_danger, previous_play)
+                handle_goal(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    shotZone, shotSC, previous_play)
+                previous_shot = pbp
+                previous_danger = shotZone
+            elif playType == "SHOT":
+                shotZone, shotSC = calculate_scoring_chance(pbp,
+                    previous_shot, previous_danger, previous_play)
+                handle_shot(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    shotZone, shotSC, previous_play)
+                previous_shot = pbp
+                previous_danger = shotZone
+            elif playType == "MISSED_SHOT":
+                shotZone, shotSC = calculate_scoring_chance(pbp,
+                    previous_shot, previous_danger, previous_play)
+                handle_missed_shot(pbp, gameDict, inplay, onice,
+                    homeStrength, awayStrength, players, homeTeam,
+                    awayTeam, shotZone, shotSC, previous_play)
+                previous_shot = pbp
+                previous_danger = shotZone
+            elif playType == "PENALTY":
+                handle_penalty(pbp, gameDict, inplay, onice,
+                    homeStrength, awayStrength, players, homeTeam,
+                    awayTeam, previous_play)
+            elif playType == "PENALTY_END":
+                pass
+            elif playType == "STOP":
+                pass
+            elif playType == "SUBSTITUTION":
+                pass
+            elif playType == "FIGHT":
+                pass
+            elif playType == "TAKEAWAY":
+                handle_takeaway(pbp, gameDict, inplay, onice, homeStrength,
+                    awayStrength, players, homeTeam, awayTeam,
+                    previous_play)
+            elif playType == "BLOCKED_SHOT":
+                shotZone, shotSC = calculate_scoring_chance(pbp,
+                    previous_shot, previous_danger, previous_play)
+                handle_blocked_shot(pbp, gameDict, inplay, onice,
+                    homeStrength, awayStrength, players, homeTeam,
+                    awayTeam, shotZone, shotSC, previous_play)
+                previous_shot = pbp
+                previous_danger = shotZone
+            elif playType == "PERIOD_START":
+                pass
+            elif playType == "PERIOD_END":
+                pass
+            elif playType == "GAME_END":
+                pass
+            elif playType == "GAME_SCHEDULED":
+                pass
+            elif playType == "PERIOD_READY":
+                pass
+            elif playType == "PERIOD_OFFICIAL":
+                pass
+            elif playType == "SHOOTOUT_COMPLETE":
+                pass
+            elif playType == "EARLY_INT_START":
+                pass
+            elif playType == "EARLY_INT_END":
+                pass
+            elif playType == "GAME_OFFICIAL":
+                pass
+            elif playType == "CHALLENGE":
+                pass
+            elif playType == "EMERGENCY_GOALTENDER":
+                pass
+            # Update those who were on the ice for the play as well
+            previous_play = pbp
+        sAddData = []
+        gAddData = []
+        for pid in gameDict["skaters"]:
+            skater = gameDict["skaters"][pid]
+            for p in skater:
+                period = skater[p]
+                for strength in period:
+                    relevant = ["goals", "assists", "assists2", "gf",
+                        "ga", "pnDrawn", "pn", "sf", "msf",
+                        "bsf", "onsf", "onmsf", "onbsf", "offgf", "offsf",
+                        "offmsf", "offbsf", "offga", "offsa",
+                        "offmsa", "offbsa", "sa", "msa", "bsa", "zso",
+                        "zsn", "zsd", "toi", "ihsc", "isc", "sc",
+                        "hscf", "hsca", "sca", "fo_w", "fo_l", "hit",
+                        "hitt", "gv", "tk", "toi", "timeOffIce", "ab"]
+                    add = False
+                    for key in relevant:
+                        if period[strength][key] > 0:
+                            add = True
+                            break
+                    if add:
+                        m, s = divmod(period[strength]["toi"], 60)
+                        h, m = divmod(m, 60)
+                        toi = "%d:%02d:%02d" % (h, m, s)
+                        period[strength]["toi"] = toi
+                        m, s = divmod(period[strength]["timeOffIce"], 60)
+                        h, m = divmod(m, 60)
+                        toi = "%d:%02d:%02d" % (h, m, s)
+                        period[strength]["timeOffIce"] = toi
+                        cpgs = pmodels.CompiledPlayerGameStats(**period[strength])
+                        sAddData.append(cpgs)
+        for pid in gameDict["goalies"]:
+            skater = gameDict["goalies"][pid]
+            for p in skater:
+                period = skater[p]
+                for strength in period:
+                    relevant = ["shotsLow", "savesLow", "shotsMedium",
+                        "savesMedium", "shotsHigh", "savesHigh", "toi"]
+                    add = False
+                    for key in relevant:
+                        if period[strength][key] > 0:
+                            add = True
+                            break
+                    if add:
+                        m, s = divmod(period[strength]["toi"], 60)
+                        h, m = divmod(m, 60)
+                        toi = "%d:%02d:%02d" % (h, m, s)
+                        period[strength]["toi"] = toi
+                        cggs = pmodels.CompiledGoalieGameStats(**period[strength])
+                        gAddData.append(cggs)
+        with transaction.atomic():
+            pmodels.CompiledPlayerGameStats.objects.bulk_create(sAddData)
+            pmodels.CompiledGoalieGameStats.objects.bulk_create(gAddData)
 
 
 def update_player_stats(pd, team, game, players, period):

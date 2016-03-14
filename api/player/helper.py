@@ -48,7 +48,7 @@ def setup_skater(data):
             pdict[key] = data[key]
     for key in zeroes:
         pdict[key] = 0
-    pdict["games"] = 1
+    pdict["games"] = 0
     if len(pdict["height"]) == 5:
         pdict["height"] = pdict["height"][:3] + "0" + pdict["height"][3:]
     pdict["currentTeamAbbr"] = data["currentTeam__abbreviation"]

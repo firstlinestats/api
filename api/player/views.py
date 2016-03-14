@@ -59,10 +59,10 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 kwargs['period'] = int(getValues["period"][0])
             except:
                 pass
-        args = (Q(strength = "all"), )
+        args = Q(strength = "all")
         if "strength" in getValues:
             try:
-                args = (Q(strength=getValues["strength"][0]), )
+                args = Q(strength=getValues["strength"][0])
             except Exception as e:
                 pass
         bySeason = False
@@ -80,7 +80,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
         teams = None
         if "teams" in getValues and len(getValues["teams"]) > 0:
             teams = getValues["teams"]
-            args = args & ( Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']), )
+            args = args & (Q(game__awayTeam__in = getValues['teams']) | Q(game__homeTeam__in = getValues['teams']))
         toi = None
         if "toi" in getValues and len(getValues["toi"]) > 0:
             try:
@@ -134,7 +134,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 "hitt", "hsca", "offmsf", "fo_w", "sf", "zsd",
                 "offsf", "offsa", "isc", "ihsc", "sa", "zso",
                 "pnDrawn", "goals", "game_id",
-                ).filter(*args, **kwargs).prefetch_related("game__season").iterator()
+                ).filter(*(args, ), **kwargs).prefetch_related("game__season").iterator()
 
         compiled = []
         playergames = {}
@@ -142,16 +142,19 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             pid = data["player_id"]
             if pid not in playergames:
                 playergames[pid] = set()
-                playergames[pid].add(data["game_id"])
-            else:
-                add_player(players[pid], data, playergames, gameDict)
+            add_player(players[pid], data, playergames, gameDict)
         if toi is not None:
             playerstoi = []
             for player in players:
                 if players[player]["toi"] / players[player]["games"] >= toi:
                     playerstoi.append(players[player])
             return Response(playerstoi)
-        return Response(players.values())
+        finalplayers = []
+        for player in players:
+            pdata = players[player]
+            if pdata["games"] > 0:
+                finalplayers.append(pdata)
+        return Response(finalplayers)
 
 
 @permission_classes((IsAuthenticatedOrReadOnly, ))
