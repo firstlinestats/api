@@ -340,7 +340,6 @@ def main():
     while keep_running:
         # Loop through current_games
         for game in current_games:
-            print game.gamePk
             # Call function that will handle most of the work, return True if the game has finished
             finished = update_game(game, players)
             # If the game has finished, compile the final stats
@@ -361,7 +360,6 @@ def main():
             diff = gameTime - today
             seconds = diff.total_seconds() - 60
             if seconds > 0:
-                print "waiting " + str(seconds) + " seconds..."
                 time.sleep(seconds)
             else:
                 time.sleep(60)
