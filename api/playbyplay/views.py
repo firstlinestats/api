@@ -151,6 +151,9 @@ class GameDataViewSet(viewsets.ViewSet):
             lpl = None
             lpt = None
             for play in pbp:
+                if game["gameState"] in ['3', '4']:
+                    details["period"] = play["period"]
+                    details["periodTime"] = str(play["periodTime"])[:-3]
                 add_play = False
                 if previous_play is not None and previous_period == play["period"]:
                     addedTime = self.diff_times_in_seconds(previous_play, play["periodTime"])

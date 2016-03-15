@@ -115,25 +115,20 @@ def get_player(id=None, ids=None):
 
 def getPlayer(playerDict, number2name, currnum, backup_names, away):
     currnum = str(currnum)
-    if currnum in number2name:
-        if number2name[currnum] in playerDict:
-            return playerDict[number2name[currnum]]
-        sn = number2name[currnum].split(" ").upper()
-    else:
-        if away is False:
-            if str(currnum) + "H" in backup_names:
-                sn = backup_names[str(currnum) + "H"].upper().split(" ")
-            else:
-                sn = backup_names[str(currnum)].upper().split(" ")
+    if away is False:
+        if str(currnum) + "H" in backup_names:
+            sn = backup_names[str(currnum) + "H"].upper().split(" ")
         else:
             sn = backup_names[str(currnum)].upper().split(" ")
+    else:
+        sn = backup_names[str(currnum)].upper().split(" ")
     # check for first name?
     for name in playerDict:
         ps = name.upper().split(" ")
         if len(ps) == len(sn):
             fp = ps[0]
             sp = sn[0]
-            if fp in sp or sp in fp and ps[1] == sn[1]:
+            if (fp in sp or sp in fp) and ps[1] == sn[1]:
                 return playerDict[name]
     # check for last name? seriously NHL?
     for name in playerDict:
@@ -185,21 +180,41 @@ def checkGoalies(players, gamePk, team, period):
             goalie.pim = gs["pim"]
             goalie.shots = gs["shots"]
             goalie.saves = gs["saves"]
-            goalie.powerPlaySaves = gs["powerPlaySaves"]
-            goalie.shortHandedSaves = gs["shortHandedSaves"]
-            goalie.shortHandedShotsAgainst = gs["shortHandedShotsAgainst"]
-            goalie.evenShotsAgainst = gs["evenShotsAgainst"]
-            goalie.evenSaves = gs["evenSaves"]
-            goalie.powerPlayShotsAgainst = gs["powerPlayShotsAgainst"]
-            goalie.decision = gs["decision"]
+            if "powerPlaySaves" in gs:
+                goalie.powerPlaySaves = gs["powerPlaySaves"]
+            else:
+                goalie.powerPlaySaves = 0
+            if "shortHandedSaves" in gs:
+                goalie.shortHandedSaves = gs["shortHandedSaves"]
+            else:
+                goalie.shortHandedSaves = 0
+            if "shortHandedShotsAgainst" in gs:
+                goalie.shortHandedShotsAgainst = gs["shortHandedShotsAgainst"]
+            else:
+                goalie.shortHandedShotsAgainst = 0
+            if "evenShotsAgainst" in gs:
+                goalie.evenShotsAgainst = gs["evenShotsAgainst"]
+            else:
+                goalie.evenShotsAgainst = 0
+            if "evenSaves" in gs:
+                goalie.evenSaves = gs["evenSaves"]
+            else:
+                goalie.evenSaves = 0
+            if "powerPlayShotsAgainst" in gs:
+                goalie.powerPlayShotsAgainst = gs["powerPlayShotsAgainst"]
+            else:
+                goalie.powerPlayShotsAgainst = 0
+            if "decision" in gs:
+                goalie.decision = gs["decision"]
             goalie.save()
             goalies.append(goalie)
     return goalies
 
 
-def ingest_player(jinfo, team=None):
+def ingest_player(jinfo, team=None, player=None):
     try:
-        player = pmodels.Player()
+        if player is None:
+            player = pmodels.Player()
         player.id = jinfo["id"]
         player.fullName = jinfo["fullName"]
         player.link = jinfo["link"]
@@ -239,7 +254,9 @@ def set_player_stats(pd, team, game, players, period):
                 player = ingest_player(json.loads(get_player(sid.replace("ID", "")))["people"][0])
                 players[player.id] = player
             else:
-                player = players[iid]
+                temp = pmodels.Player.objects.get(id=iid)
+                player = ingest_player(json.loads(get_player(sid.replace("ID", "")))["people"][0], player=temp)
+                players[player.id] = player
             pgs = pbpmodels.PlayerGameStats()
             pgs.player = player
             pgs.game = game
@@ -248,20 +265,56 @@ def set_player_stats(pd, team, game, players, period):
             pgs.goals = jp["goals"]
             pgs.shots = jp["shots"]
             pgs.hits = jp["hits"]
-            pgs.powerPlayGoals = jp["powerPlayGoals"]
-            pgs.powerPlayAssists = jp["powerPlayAssists"]
-            pgs.penaltyMinutes = jp["penaltyMinutes"]
-            pgs.faceOffWins = jp["faceOffWins"]
-            pgs.faceoffTaken = jp["faceoffTaken"]
-            pgs.takeaways = jp["takeaways"]
-            pgs.giveaways = jp["giveaways"]
-            pgs.shortHandedGoals = jp["shortHandedGoals"]
-            pgs.shortHandedAssists = jp["shortHandedAssists"]
+            if "powerPlayGoals" in jp:
+                pgs.powerPlayGoals = jp["powerPlayGoals"]
+            else:
+                pgs.powerPlayGoals = 0
+            if "powerPlayAssists" in jp:
+                pgs.powerPlayAssists = jp["powerPlayAssists"]
+            else:
+                pgs.powerPlayAssists = 0
+            if "penaltyMinutes" in jp:
+                pgs.penaltyMinutes = jp["penaltyMinutes"]
+            else:
+                pgs.penaltyMinutes = 0
+            if "faceOffWins" in jp:
+                pgs.faceOffWins = jp["faceOffWins"]
+            else:
+                pgs.faceOffWins = 0
+            if "faceoffTaken" in jp:
+                pgs.faceoffTaken = jp["faceoffTaken"]
+            else:
+                pgs.faceoffTaken = 0
+            if "takeaways" in jp:
+                pgs.takeaways = jp["takeaways"]
+            else:
+                pgs.takeaways = 0
+            if "giveaways" in jp:
+                pgs.giveaways = jp["giveaways"]
+            else:
+                pgs.giveaways = 0
+            if "shortHandedGoals" in jp:
+                pgs.shortHandedGoals = jp["shortHandedGoals"]
+            else:
+                pgs.shortHandedGoals = 0
+            if "shortHandedAssists" in jp:
+                pgs.shortHandedAssists = jp["shortHandedAssists"]
+            else:
+                pgs.shortHandedAssists = 0
             pgs.blocked = jp["blocked"]
             pgs.plusMinus = jp["plusMinus"]
-            pgs.evenTimeOnIce = "00:" + jp["evenTimeOnIce"]
-            pgs.powerPlayTimeOnIce = "00:" + jp["powerPlayTimeOnIce"]
-            pgs.shortHandedTimeOnIce = "00:" + jp["shortHandedTimeOnIce"]
+            if "evenTimeOnIce" in jp:
+                pgs.evenTimeOnIce = "00:" + jp["evenTimeOnIce"]
+            else:
+                pgs.evenTimeOnIce = "00:00:00"
+            if "powerPlayTimeOnIce" in jp:
+                pgs.powerPlayTimeOnIce = "00:" + jp["powerPlayTimeOnIce"]
+            else:
+                pgs.powerPlayTimeOnIce = "00:00:00"
+            if "shortHandedTimeOnIce" in jp:
+                pgs.shortHandedTimeOnIce = "00:" + jp["shortHandedTimeOnIce"]
+            else:
+                pgs.shortHandedTimeOnIce = "00:00:00"
             pgs.period = period
             pgs.team = team
             pgss.append(pgs)
@@ -307,7 +360,11 @@ def main():
             today = datetime.datetime.now(tz=pytz.UTC)
             diff = gameTime - today
             seconds = diff.total_seconds() - 60
-            time.sleep(seconds)
+            if seconds > 0:
+                print "waiting " + str(seconds) + " seconds..."
+                time.sleep(seconds)
+            else:
+                time.sleep(60)
         else:
             # sleep for one minute
             time.sleep(60)
@@ -340,8 +397,6 @@ def update_game(game, players):
     game.dateTime = gd["datetime"]["dateTime"]
     if "endDateTime" in gd["datetime"]:
         game.endDateTime = gd["datetime"]["endDateTime"]
-    else:
-        print gd["datetime"]
     game.gameState = gd["status"]["codedGameState"]
     # Get linescore information
     game.homeScore = lineScore["teams"]["home"]["goals"]
@@ -460,6 +515,8 @@ def update_game(game, players):
         if "x" in coordinates and "y" in coordinates:
             p.xcoord = coordinates["x"]
             p.ycoord = coordinates["y"]
+        p.homeScore = game.homeScore
+        p.awayScore = game.awayScore
         allplaybyplay.append(p)
         assist_found = False
         for pp in pplayers:
