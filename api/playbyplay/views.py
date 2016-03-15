@@ -167,14 +167,14 @@ class GameDataViewSet(viewsets.ViewSet):
                 if play["playType"] == "GOAL":
                     if play["team__teamName"] == homeTeam["teamName"] and homeinclude:
                         if lp is not None:
-                            if seconds - lp < lpl and lpt == homeTeam["teamName"]:
+                            if seconds - lp < lpl and lpt == homeTeam["teamName"] and len(gameData["eventcount"]["homepp"]) > 1:
                                 gameData["eventcount"]["homepp"][-1]["length"] = seconds - lp
                         lp = None
                         helper.calc_sa(gameData["eventcount"]["homegoal"], seconds)
                         hsc += 1
                     elif play["team__teamName"] == awayTeam["teamName"] and awayinclude:
                         if lp is not None:
-                            if seconds - lp < lpl and lpt == awayTeam["teamName"]:
+                            if seconds - lp < lpl and lpt == awayTeam["teamName"] and len(gameData["eventcount"]["awaypp"]) > 1:
                                 gameData["eventcount"]["awaypp"][-1]["length"] = seconds - lp
                         lp = None
                         helper.calc_sa(gameData["eventcount"]["awaygoal"], seconds)
@@ -282,7 +282,7 @@ class GameDataViewSet(viewsets.ViewSet):
                         if team == homeTeam["teamName"] and homeinclude:
                             xcoord = play["xcoord"]
                             ycoord = play["ycoord"]
-                            if xcoord < 0:
+                            if xcoord < 0 and xcoord is not None:
                                 xcoord = abs(xcoord)
                                 ycoord = ycoord
                             gameData["shotData"]["home"].append({"x": xcoord,
@@ -711,40 +711,41 @@ class GameDataViewSet(viewsets.ViewSet):
 
     def point_inside_polygon(self, x, y, poly):
         # check if point is a vertex
-        x = float(x)
-        y = float(y)
-        if x < 0:
-            x = abs(x)
-            y = -y
-        if (x,y) in poly: return True
-
-        # check if point is on a boundary
-        for i in range(len(poly)):
-            p1 = None
-            p2 = None
-            if i==0:
-                p1 = poly[0]
-                p2 = poly[1]
-            else:
-                p1 = poly[i-1]
-                p2 = poly[i]
-            if p1[1] == p2[1] and p1[1] == y and x > min(p1[0], p2[0]) and x < max(p1[0], p2[0]):
-                return True
-          
-        n = len(poly)
         inside = False
+        if x is not None and y is not None:
+            x = float(x)
+            y = float(y)
+            if x < 0:
+                x = abs(x)
+                y = -y
+            if (x,y) in poly: return True
 
-        p1x,p1y = poly[0]
-        for i in range(n+1):
-            p2x,p2y = poly[i % n]
-            if y > min(p1y,p2y):
-                if y <= max(p1y,p2y):
-                    if x <= max(p1x,p2x):
-                        if p1y != p2y:
-                            xints = (y-p1y)*(p2x-p1x)/(p2y-p1y)+p1x
-                        if p1x == p2x or x <= xints:
-                            inside = not inside
-            p1x,p1y = p2x,p2y
+            # check if point is on a boundary
+            for i in range(len(poly)):
+                p1 = None
+                p2 = None
+                if i==0:
+                    p1 = poly[0]
+                    p2 = poly[1]
+                else:
+                    p1 = poly[i-1]
+                    p2 = poly[i]
+                if p1[1] == p2[1] and p1[1] == y and x > min(p1[0], p2[0]) and x < max(p1[0], p2[0]):
+                    return True
+              
+            n = len(poly)
+
+            p1x,p1y = poly[0]
+            for i in range(n+1):
+                p2x,p2y = poly[i % n]
+                if y > min(p1y,p2y):
+                    if y <= max(p1y,p2y):
+                        if x <= max(p1x,p2x):
+                            if p1y != p2y:
+                                xints = (y-p1y)*(p2x-p1x)/(p2y-p1y)+p1x
+                            if p1x == p2x or x <= xints:
+                                inside = not inside
+                p1x,p1y = p2x,p2y
 
         if inside:
             return True
