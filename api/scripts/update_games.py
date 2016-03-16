@@ -113,6 +113,13 @@ def get_player(id=None, ids=None):
     return get_url(url)
 
 
+def get_standings(date=None):
+    url = STANDINGS
+    if date is not None:
+        url += "?date=" + date
+    return get_url(url)
+
+
 def getPlayer(playerDict, number2name, currnum, backup_names, away):
     currnum = str(currnum)
     if away is False:
@@ -327,6 +334,43 @@ def find_current_games():
     return current_games
 
 
+@transaction.atomic
+def findStandings(season):
+
+    j = json.loads(get_standings())
+    try:
+        exists = tmodels.SeasonStats.objects.filter(date=datetime.date.today())
+        exists.delete()
+    except:
+        pass
+    for record in j["records"]:
+        division = record["division"]["name"][0]
+        conference = record["division"]["name"][0]
+        for team in record["teamRecords"]:
+            stat = tmodels.SeasonStats()
+            stat.team_id = team["team"]["id"]
+            stat.season = season
+            try:
+                stat.goalsAgainst = team["goalsAgainst"]
+                stat.goalsScored = team["goalsScored"]
+            except:
+                pass
+            stat.points = team["points"]
+            stat.gamesPlayed = team["gamesPlayed"]
+            stat.wins = team["leagueRecord"]["wins"]
+            stat.losses = team["leagueRecord"]["losses"]
+            stat.ot = team["leagueRecord"]["ot"]
+            stat.date = datetime.date.today()
+            try:
+                stat.streakCode = team["streak"]["streakCode"]
+            except:
+                pass
+            try:
+                stat.save()
+            except:
+                pass
+
+
 def main():
     # Find games that are current
     current_games = find_current_games()
@@ -340,17 +384,21 @@ def main():
     while keep_running:
         # Loop through current_games
         for game in current_games:
-            # Call function that will handle most of the work, return True if the game has finished
-            finished = update_game(game, players)
-            # If the game has finished, compile the final stats
-            if finished:
-                fgame = {"gamePk": game.gamePk, "homeTeam_id": game.homeTeam_id,
-                    "awayTeam_id": game.awayTeam_id}
-                # Delete any existing
-                with transaction.atomic():
-                    pmodels.CompiledPlayerGameStats.objects.filter(game=game).delete()
-                    pmodels.CompiledGoalieGameStats.objects.filter(game=game).delete()
-                    compile_game(fgame)
+            try:
+                # Call function that will handle most of the work, return True if the game has finished
+                finished = update_game(game, players)
+                # If the game has finished, compile the final stats
+                if finished:
+                    fgame = {"gamePk": game.gamePk, "homeTeam_id": game.homeTeam_id,
+                        "awayTeam_id": game.awayTeam_id}
+                    # Delete any existing
+                    with transaction.atomic():
+                        pmodels.CompiledPlayerGameStats.objects.filter(game=game).delete()
+                        pmodels.CompiledGoalieGameStats.objects.filter(game=game).delete()
+                        compile_game(fgame)
+                        findStandings(game.season)
+            except:
+                pass
         
         # Find active games and loop back up, repeating
         current_games = find_current_games()

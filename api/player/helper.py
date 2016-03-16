@@ -35,14 +35,12 @@ def setup_skater(data):
         "team": data["currentTeam__abbreviation"]}
     exclude = ["fullName", "currentTeam__abbreviation",
         "birthDate", "primaryPositionCode"]
-    zeroes = ["gv", "offbsf", "ab", "offmsa", "gf", "ga", "offbsa",
-        "fo_l", "hscf", "onbsf", "onsf", "zsn",
-        "tk", "msf", "pn", "msa",
-        "hit", "assists2", "sca", "sc", "offga",
-        "assists", "offgf", "bsf", "bsa", "onmsf",
-        "hitt", "hsca", "offmsf", "fo_w", "sf", "zsd",
-        "offsf", "offsa", "isc", "ihsc", "sa", "zso",
-        "pnDrawn", "goals", "toi", "timeOffIce"]
+    zeroes = ["pnDrawn", "pn", "sf", "msf", "bsf",
+       "ab", "onsf", "onmsf", "onbsf", "offgf", "offsf",
+       "offmsf", "offbsf", "offga", "offsa", "offmsa",
+       "offbsa", "sa", "msa", "bsa", "zso", "zsn", "zsd",
+       "toi", "timeOffIce", "ihsc", "isc", "sc", "hscf",
+       "hsca", "sca", "fo_w", "fo_l", "hit", "hitt", "gv", "tk"]
     for key in data:
         if key not in exclude:
             pdict[key] = data[key]

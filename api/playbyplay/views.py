@@ -152,7 +152,9 @@ class GameDataViewSet(viewsets.ViewSet):
             lpl = None
             lpt = None
             period = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('period'))['period__max'])
-            periodTime = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('periodTime'))['periodTime__max'])[:3]
+            periodTime = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('periodTime'))['periodTime__max'])
+            if len(periodTime) > 5:
+                periodTime = periodTime[:-3]
             details['period'] = period
             details['periodTime'] = periodTime
             for play in pbp:

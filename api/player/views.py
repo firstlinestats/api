@@ -125,15 +125,13 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             player = setup_skater(player)
             players[player["id"]] = player
         gameData = CompiledPlayerGameStats.objects.\
-            values("player_id", "gv", "offbsf", "ab",
-                "offmsa", "gf", "ga",
-                "offbsa", "fo_l", "hscf", "onbsf", "onsf", "zsn",
-                "timeOffIce", "toi", "tk", "msf", "pn", "msa",
-                "hit", "assists2", "sca", "sc", "offga",
-                "assists", "offgf", "bsf", "bsa", "onmsf",
-                "hitt", "hsca", "offmsf", "fo_w", "sf", "zsd",
-                "offsf", "offsa", "isc", "ihsc", "sa", "zso",
-                "pnDrawn", "goals", "game_id",
+            values("player_id", "game_id", "goals", "assists", "assists2",
+                   "gf", "ga", "pnDrawn", "pn", "sf", "msf", "bsf",
+                   "ab", "onsf", "onmsf", "onbsf", "offgf", "offsf",
+                   "offmsf", "offbsf", "offga", "offsa", "offmsa",
+                   "offbsa", "sa", "msa", "bsa", "zso", "zsn", "zsd",
+                   "toi", "timeOffIce", "ihsc", "isc", "sc", "hscf",
+                   "hsca", "sca", "fo_w", "fo_l", "hit", "hitt", "gv", "tk"
                 ).filter(*(args, ), **kwargs).prefetch_related("game__season").iterator()
 
         compiled = []
