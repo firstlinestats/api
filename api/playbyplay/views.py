@@ -781,7 +781,7 @@ class RecentGameViewSet(viewsets.ViewSet):
     def list(self, request):
         currentSeason = models.Game.objects.latest("endDateTime").season
         kwargs = {
-            'dateTime__lte': datetime.datetime.today(),
+            'dateTime__lte': datetime.datetime.today() + datetime.timedelta(hours=12),
             'season' : currentSeason
         }
         args = ()
