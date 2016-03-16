@@ -151,10 +151,11 @@ class GameDataViewSet(viewsets.ViewSet):
             lp = None
             lpl = None
             lpt = None
+            period = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('period'))['period__max'])
+            periodTime = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('periodTime'))['periodTime__max'])
+            details['period'] = period
+            details['periodTime'] = periodTime
             for play in pbp:
-                if game["gameState"] in ['3', '4']:
-                    details["period"] = play["period"]
-                    details["periodTime"] = str(play["periodTime"])[:-3]
                 add_play = False
                 if previous_play is not None and previous_period == play["period"]:
                     addedTime = self.diff_times_in_seconds(previous_play, play["periodTime"])
