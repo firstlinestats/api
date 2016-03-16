@@ -1,7 +1,7 @@
 from __future__ import division
 
 from django.db.models import Q
-from django.db.models import Max
+from django.db.models import Max, Min
 from django.utils import timezone
 from django.shortcuts import render, get_object_or_404
 
@@ -152,7 +152,8 @@ class GameDataViewSet(viewsets.ViewSet):
             lpl = None
             lpt = None
             period = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('period'))['period__max'])
-            periodTime = str(models.PlayByPlay.objects.filter(gamePk=gamePk).aggregate(Max('periodTime'))['periodTime__max'])
+            periodTime = str(models.PlayByPlay.objects.filter(gamePk=gamePk, period=period).aggregate(Max('periodTime'))['periodTime__max'])
+            print periodTime
             if len(periodTime) > 5:
                 periodTime = periodTime[:-3]
             details['period'] = period
@@ -806,7 +807,7 @@ class RecentGameViewSet(viewsets.ViewSet):
                     g['gameState'] = item[1]
                     if g['gameState'] == "Live (In Progress)" or g['gameState'] == "Live (In Progress - Critical)":
                         period = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('period'))['period__max'])
-                        periodTime = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('periodTime'))['periodTime__max'])
+                        periodTime = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk'], period=period).aggregate(Max('periodTime'))['periodTime__max'])
                         g['gameState'] += " P" + period + " " + periodTime[:-3]
             g['dateTime'] = game['dateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
             g['endDateTime'] = ''
