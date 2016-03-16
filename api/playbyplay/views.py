@@ -1,6 +1,7 @@
 from __future__ import division
 
 from django.db.models import Q
+from django.db.models import Max
 from django.utils import timezone
 from django.shortcuts import render, get_object_or_404
 
@@ -782,11 +783,11 @@ class RecentGameViewSet(viewsets.ViewSet):
         args = ()
         games = models.Game.objects\
             .values('gamePk', 'dateTime', 'gameType', 'gameState', 'awayTeam', 'homeTeam', 'awayTeam__abbreviation', 
-                'homeTeam__abbreviation', 'homeTeam__id', 
+                'homeTeam__abbreviation', 'homeTeam__id',
                 'awayTeam__id', 'homeTeam__shortName', 'awayTeam__shortName', 'homeScore', 'awayScore', 'awayShots', 
                 'homeShots', 'awayBlocked', 'homeBlocked', 'awayMissed',
                 'homeMissed', 'gameState', 'endDateTime')\
-            .filter(*args, **kwargs).order_by('-gamePk')
+            .filter(*args, **kwargs).order_by('gameState', 'dateTime')
         gameList = []
         us_tz = pytz.timezone("US/Eastern")
         for game in games:
@@ -800,6 +801,10 @@ class RecentGameViewSet(viewsets.ViewSet):
             for item in gameStates:
                 if item[0] == game['gameState']:
                     g['gameState'] = item[1]
+                    if g['gameState'] == "Live (In Progress)":
+                        period = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('period'))['period__max'])
+                        periodTime = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('periodTime'))['periodTime__max'])
+                        g['gameState'] += " P" + period + " " + periodTime[:-3]
             g['dateTime'] = game['dateTime'].astimezone(us_tz).strftime("%I:%M %p EST")
             g['endDateTime'] = ''
             if game['endDateTime'] is not None:
