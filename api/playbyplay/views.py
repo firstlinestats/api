@@ -804,7 +804,7 @@ class RecentGameViewSet(viewsets.ViewSet):
             for item in gameStates:
                 if item[0] == game['gameState']:
                     g['gameState'] = item[1]
-                    if g['gameState'] == "Live (In Progress)":
+                    if g['gameState'] == "Live (In Progress)" or g['gameState'] == "Live (In Progress - Critical)":
                         period = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('period'))['period__max'])
                         periodTime = str(models.PlayByPlay.objects.filter(gamePk=game['gamePk']).aggregate(Max('periodTime'))['periodTime__max'])
                         g['gameState'] += " P" + period + " " + periodTime[:-3]
