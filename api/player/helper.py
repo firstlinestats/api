@@ -21,10 +21,11 @@ def add_player(existing, newdata, playergames, gameDict):
         if key not in exclude:
             if key not in existing:
                 existing[key] = newdata[key]
-            existing[key] += newdata[key]
+            else:
+                existing[key] += newdata[key]
     existing["toi"] += newdata["toi"].minute * 60 + newdata["toi"].second
     existing["timeOffIce"] += newdata["timeOffIce"].minute * 60 + newdata["timeOffIce"].second
-    if newdata["game_id"] not in playergames[existing["id"]] and newdata["toi"].minute * 60 + newdata["toi"].second > 0:
+    if newdata["game_id"] not in playergames[existing["id"]]:
         existing["games"] += 1
         playergames[existing["id"]].add(newdata["game_id"])
 

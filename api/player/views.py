@@ -29,15 +29,8 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 getValues.pop(key, None)
         args = ()
         kwargs = {
-            'game__gameState': 7,
+            'game__gameState__in': [5, 6, 7,],
             'game__season__in': [currentSeason, ]
-        }
-        playerArgs = ()
-        playerKwargs = {}
-        gameArgs = ()
-        gameKwargs = {
-            'game__gameState': 7,
-            'game__season': currentSeason
         }
         if "player" in getValues and len(getValues["player"]) > 0:
             player = getValues["player"]
@@ -59,6 +52,8 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                 kwargs['period'] = int(getValues["period"][0])
             except:
                 pass
+        else:
+            kwargs['period__lte'] = 4
         args = Q(strength = "all")
         if "strength" in getValues:
             try:
@@ -117,7 +112,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
         # Get players
         playersdata = Player.objects.values("currentTeam__abbreviation",
             "id", "fullName", "height", "weight", "birthDate", "primaryPositionCode")\
-            .filter(*playerArgs, **playerKwargs).exclude(primaryPositionCode="G")
+            .exclude(primaryPositionCode="G")
         players = {}
 
         # Get stats
@@ -130,7 +125,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
                    "ab", "onsf", "onmsf", "onbsf", "offgf", "offsf",
                    "offmsf", "offbsf", "offga", "offsa", "offmsa",
                    "offbsa", "sa", "msa", "bsa", "zso", "zsn", "zsd",
-                   "toi", "timeOffIce", "ihsc", "isc", "sc", "hscf",
+                   "toi", "timeOffIce", "ihsc", "isc", "sc", "hscf", "period",
                    "hsca", "sca", "fo_w", "fo_l", "hit", "hitt", "gv", "tk"
                 ).filter(*(args, ), **kwargs).prefetch_related("game__season").iterator()
 
