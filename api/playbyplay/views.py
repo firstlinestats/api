@@ -66,6 +66,7 @@ class GameDataViewSet(viewsets.ViewSet):
         details["awayScore"] = game["awayScore"]
         details["venue"] = str(game["venue"])
         details["date"] = game["dateTime"].astimezone(pytz.timezone('US/Eastern')).strftime("%B %d, %Y %I:%M %p EST")
+        details["gameState"] = game["gameState"]
         gameData["details"] = details
         gameData["eventcount"] = {"homepp": [], "awaypp": [], "4v4": [],
             "homegoal": [], "awaygoal": [], "emptynet": [],
