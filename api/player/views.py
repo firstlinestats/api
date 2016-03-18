@@ -40,9 +40,9 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
                 date_end =  datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
-
-                kwargs['game__dateTime__gte'] = date_start
-                kwargs['game__dateTime__lte'] = date_end
+                print date_start, date_end
+                kwargs['game__dateTime__gte'] = date_start - datetime.timedelta(hours=12)
+                kwargs['game__dateTime__lte'] = date_end + datetime.timedelta(hours=24)
             except Exception as e:
                 print e
                 date_start = None
@@ -51,7 +51,7 @@ class PlayerGameStatsViewSet(viewsets.ViewSet):
             try:
                 kwargs['period'] = int(getValues["period"][0])
             except:
-                pass
+                kwargs['period__lte'] = 4
         else:
             kwargs['period__lte'] = 4
         args = Q(strength = "all")

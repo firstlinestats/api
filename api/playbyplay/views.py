@@ -43,6 +43,7 @@ class GameDataViewSet(viewsets.ViewSet):
         else:
             return Response({"details": "Game not found."})
         kwargs = {"gamePk": gamePk}
+        kwargs["period__lte"] = 4
         if period is not None:
             try:
                 kwargs["period"] = int(period[0])
@@ -876,8 +877,8 @@ class GameListViewSet(viewsets.ViewSet):
             try:
                 date_start = datetime.datetime.strptime(getValues["date_start"][0], "%m/%d/%Y").date()
                 date_end = datetime.datetime.strptime(getValues["date_end"][0], "%m/%d/%Y").date()
-                kwargs['dateTime__gte'] = date_start
-                kwargs['dateTime__lte'] = date_end
+                kwargs['dateTime__gte'] = date_start - datetime.timedelta(hours=12)
+                kwargs['dateTime__lte'] = date_end + datetime.timedelta(hours=12)
             except:
                 date_start = None
                 date_end = None
