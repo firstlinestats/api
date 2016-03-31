@@ -7,3 +7,4 @@ pytz
 django-cors-headers
 django-rest-swagger
 django-debug-toolbar
+beautifulsoup4
